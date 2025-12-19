@@ -11,7 +11,7 @@ In diesem Kapitel werden die theoretischen Fundamente und spezifischen Standards
 \subsection{Zweck und Historie}
 ebInterface ist der nationale österreichische Standard für die elektronische Rechnungslegung. Er wurde von der AUSTRIAPRO, einer Initiative der Wirtschaftskammer Österreich (WKO), entwickelt, um den Datenaustausch zwischen Unternehmen sowie zwischen Unternehmen und der öffentlichen Verwaltung zu standardisieren. Die Entwicklung von ebInterface reicht bis in die frühen 2000er Jahre zurück und hat sich über mehrere Versionen (4.0, 5.0, 6.0) bis zur aktuellen Version 6.1 weiterentwickelt.
 
-Der primäre Zweck von ebInterface liegt in der Schaffung einer semantischen Interoperabilität. Während EDIFACT-Standards in großen Industriekonzernen dominierten, fehlte für KMUs (Kleine und mittlere Unternehmen) lange Zeit ein einfach zu implementierendes, XML-basiertes Format. ebInterface füllt diese Lücke. Seit 2014 ist die E-Rechnung an den Bund in Österreich verpflichtend, was die Verbreitung von ebInterface massiv gefördert hat. Rechnungen an den Bund müssen über das Unternehmensserviceportal (USP) eingebracht werden, welches ebInterface als primäres Format akzeptiert.\footnote{Vgl. \cite{Austriapro2024}}
+Der primäre Zweck von ebInterface liegt in der Schaffung einer semantischen Interoperabilität. Während EDIFACT-Standards in großen Industriekonzernen dominierten, fehlte für KMUs (Kleine und mittlere Unternehmen) lange Zeit ein einfach zu implementierendes, XML-basiertes Format. ebInterface füllt diese Lücke. Seit 2014 ist die E-Rechnung an den Bund in Österreich verpflichtend, was die Verbreitung von ebInterface massiv gefördert hat. Rechnungen an den Bund müssen über das Unternehmensserviceportal (USP) eingebracht werden, welches ebInterface als primäres Format akzeptiert.\footnote{Vgl. AUSTRIAPRO: \textit{ebInterface - Der österreichische Standard für die elektronische Rechnung}, \url{https://www.ebinterface.at/}, letzter Zugriff am 19.12.2025}
 
 \subsection{Kernelemente und Struktur}
 Technisch gesehen ist ebInterface eine reine XML-Struktur. Im Gegensatz zu ZUGFeRD gibt es keine eingebettete PDF-Datei; die XML-Datei \textit{ist} die Rechnung. Dies bedeutet, dass für die visuelle Darstellung (z.B. für die manuelle Prüfung durch einen Sachbearbeiter) ein Stylesheet (XSLT) oder ein Viewer notwendig ist.
@@ -117,7 +117,7 @@ Das XML-Format innerhalb von ZUGFeRD basiert auf der \textit{Cross Industry Invo
 
 Beispielhafte Struktur-Tiefe in CII:
 \texttt{SupplyChainTradeTransaction} $\rightarrow$ \texttt{IncludedSupplyChainTradeLineItem} $\rightarrow$ \texttt{SpecifiedLineTradeAgreement} $\rightarrow$ \texttt{NetPriceProductTradePrice} $\rightarrow$ \texttt{ChargeAmount}.
-Diese Komplexität macht die Implementierung eines Mappers anspruchsvoll, da hunderte von Pfaden korrekt befüllt werden müssen, um Validierungsfehler zu vermeiden.\footnote{Vgl. \cite{FeRD2024}}
+Diese Komplexität macht die Implementierung eines Mappers anspruchsvoll, da hunderte von Pfaden korrekt befüllt werden müssen, um Validierungsfehler zu vermeiden.\footnote{Vgl. FeRD e.V.: \textit{ZUGFeRD 2.3 - Das Datenformat für elektronische Rechnungen}, \url{https://www.ferd-net.de/standards/zugferd-2.3/index.html}, letzter Zugriff am 19.12.2025}
 Im folgenden Listing ist ein Ausschnitt einer ZUGFeRD-XML dargestellt, der die Komplexität im Vergleich zu ebInterface verdeutlicht. Man beachte die tiefen Verschachtelungen für einfache Informationen wie den Steuerbetrag.
 
 \begin{lstlisting}[language=XML, caption={Ausschnitt einer ZUGFeRD 2.3 (CII) Rechnung}, label={lst:zugferd_example}]
@@ -219,7 +219,7 @@ Das Problem bei der Generierung durch KI (LLMs) ist, dass LLMs statistische Mode
     \item Steuer-Summe: 55 Euro (statt korrekt 60 Euro)
 \end{itemize}
 Das LLM "schätzt" oder "halluziniert" die Summe oft, anstatt sie zu berechnen.
-Daher darf die Berechnung der Summen und Steuern \textbf{niemals} der KI überlassen werden. Die KI extrahiert die Einzelwerte (Menge, Preis, Steuersatz), aber die Aggregation und die Erstellung des \texttt{TaxBreakdown} für die Regel BR-S-08 muss durch deterministische Algorithmen im Backend (C\#) erfolgen. Nur so kann die Validierung gegen Schematron-Regeln bestanden werden.\footnote{Vgl. \cite{CEN2017}}
+Daher darf die Berechnung der Summen und Steuern \textbf{niemals} der KI überlassen werden. Die KI extrahiert die Einzelwerte (Menge, Preis, Steuersatz), aber die Aggregation und die Erstellung des \texttt{TaxBreakdown} für die Regel BR-S-08 muss durch deterministische Algorithmen im Backend (C\#) erfolgen. Nur so kann die Validierung gegen Schematron-Regeln bestanden werden.\footnote{Vgl. CEN - European Committee for Standardization: \textit{EN 16931-1:2017 Electronic invoicing - Semantic data model}, \url{https://standards.cen.eu/dyn/www/f?p=204:110:0::::FSP_PROJECT:60602&cs=1B61B766636F9FB34B7DBD72CE9026C72}, letzter Zugriff am 19.12.2025}
 
 \chapter{Dokumentenverarbeitung und KI-Grundlagen}
 \label{chap:doc_processing_ai}
@@ -244,7 +244,7 @@ Für die Textextraktion ergeben sich daraus massive Probleme:
 Im Projekt wird die Bibliothek \textit{PdfPig} eingesetzt. Sie versucht, die logische Struktur aus den geometrischen Informationen zu rekonstruieren.
 PdfPig analysiert die "Bounding Boxes" aller Buchstaben. Durch Heuristiken (Abstandsanalyse) werden Buchstaben zu Wörtern und Wörter zu Zeilen zusammengefügt.
 Ein spezifisches Problem bei Rechnungen sind Tabellen. Da Tabellenlinien im PDF nur Vektorgrafiken sind und keine logische Verbindung zum Text haben, ist es für Algorithmen schwer zu erkennen, welche Zahl zu welcher Spalte gehört, besonders wenn Spalten rechtsbündig sind und der Textabstand variiert.
-Dennoch liefert die direkte Extraktion aus dem PDF-Stream (wenn möglich) immer präzisere Daten als der Umweg über OCR, da keine Zeichenverwechslungen (z.B. "8" vs "B") auftreten können.\footnote{Vgl. \cite{PdfPig2024}}
+Dennoch liefert die direkte Extraktion aus dem PDF-Stream (wenn möglich) immer präzisere Daten als der Umweg über OCR, da keine Zeichenverwechslungen (z.B. "8" vs "B") auftreten können.\footnote{Vgl. UglyToad: \textit{PdfPig - Read and extract text and other content from PDFs in C\# (port of PdfBox)}, \url{https://github.com/UglyToad/PdfPig}, letzter Zugriff am 19.12.2025}
 
 \section{OCR mit Tesseract}
 \label{sec:ocr}
