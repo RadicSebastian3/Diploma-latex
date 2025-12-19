@@ -1,0 +1,350 @@
+\chapter{E-Rechnungsstandards und Compliance}
+\label{chap:standards_compliance}
+
+Die Transformation von papierbasierten Geschäftsprozessen hin zu vollautomatisierten digitalen Workflows ist einer der wesentlichen Treiber der modernen IT-Ökonomie. Im Zentrum dieser Entwicklung steht die elektronische Rechnung (E-Rechnung). Anders als eine bloße PDF-Datei, die lediglich ein digitales Abbild eines Papierdokuments darstellt, definiert eine echte E-Rechnung strukturierte Daten, die von Maschinen ohne menschliches Zutun verarbeitet, geprüft und verbucht werden können. 
+
+In diesem Kapitel werden die theoretischen Fundamente und spezifischen Standards analysiert, die für die Entwicklung des \textit{SmartBillConverter} maßgeblich sind. Der Fokus liegt dabei auf dem österreichischen Standard \textit{ebInterface} sowie dem deutsch-europäischen Hybridformat \textit{ZUGFeRD}, eingebettet in den Kontext der europäischen Norm EN 16931.
+
+\section{ebInterface 6.1 (Österreich)}
+\label{sec:ebinterface}
+
+\subsection{Zweck und Historie}
+ebInterface ist der nationale österreichische Standard für die elektronische Rechnungslegung. Er wurde von der AUSTRIAPRO, einer Initiative der Wirtschaftskammer Österreich (WKO), entwickelt, um den Datenaustausch zwischen Unternehmen sowie zwischen Unternehmen und der öffentlichen Verwaltung zu standardisieren. Die Entwicklung von ebInterface reicht bis in die frühen 2000er Jahre zurück und hat sich über mehrere Versionen (4.0, 5.0, 6.0) bis zur aktuellen Version 6.1 weiterentwickelt.
+
+Der primäre Zweck von ebInterface liegt in der Schaffung einer semantischen Interoperabilität. Während EDIFACT-Standards in großen Industriekonzernen dominierten, fehlte für KMUs (Kleine und mittlere Unternehmen) lange Zeit ein einfach zu implementierendes, XML-basiertes Format. ebInterface füllt diese Lücke. Seit 2014 ist die E-Rechnung an den Bund in Österreich verpflichtend, was die Verbreitung von ebInterface massiv gefördert hat. Rechnungen an den Bund müssen über das Unternehmensserviceportal (USP) eingebracht werden, welches ebInterface als primäres Format akzeptiert.\footnote{Vgl. \cite{Austriapro2024}}
+
+\subsection{Kernelemente und Struktur}
+Technisch gesehen ist ebInterface eine reine XML-Struktur. Im Gegensatz zu ZUGFeRD gibt es keine eingebettete PDF-Datei; die XML-Datei \textit{ist} die Rechnung. Dies bedeutet, dass für die visuelle Darstellung (z.B. für die manuelle Prüfung durch einen Sachbearbeiter) ein Stylesheet (XSLT) oder ein Viewer notwendig ist.
+
+Die Struktur eines ebInterface 6.1 Dokuments ist hierarchisch aufgebaut und umfasst folgende Hauptbereiche:
+\begin{itemize}
+    \item \textbf{Root-Element}: \texttt{<Invoice>} definiert die Grundeigenschaften wie Währung, Sprache und Dokumententitel.
+    \item \textbf{Header-Daten}: Hierzu zählen die eindeutige Rechnungsnummer (\texttt{InvoiceNumber}), das Rechnungsdatum (\texttt{InvoiceDate}) und der Leistungszeitraum (\texttt{Delivery}).
+    \item \textbf{Biller (Rechnungssteller)}: Enthält detaillierte Informationen zum Leistenden, inklusive der gesetzlich vorgeschriebenen UID-Nummer (VAT Identification Number), Anschrift, Kontaktdaten und Bankverbindung.
+    \item \textbf{InvoiceRecipient (Rechnungsempfänger)}: Analog zum Biller die Daten des Leistungsempfängers. Hier ist oft die Auftragsreferenz (Order Reference) entscheidend für die automatische Zuordnung.
+    \item \textbf{Details (Positionen)}: Der Kern der Rechnung. Hier werden in einer Liste (\texttt{ItemList}) die einzelnen Positionen (\texttt{ListLineItem}) aufgeführt. Jede Position enthält Menge, Einheit, Einzelpreis, Beschreibung, Steuerreferenz und Zeilensumme.
+    \item \textbf{Tax (Steuern)}: Eine Zusammenfassung der Steuerbeträge, gruppiert nach Steuersätzen. Dies ist essenziell für die Vorsteuerabzugs-Prüfung.
+    \item \textbf{PaymentConditions}: Zahlungsziele, Skonto-Informationen und Fälligkeitsdaten.
+\end{itemize}
+
+\subsection{Pflichtfelder und Validierung}
+Die Validität einer ebInterface-Rechnung wird durch ein XML Schema (XSD) definiert. Pflichtfelder sind jene, die laut Umsatzsteuergesetz (UStG) für eine ordnungsgemäße Rechnung erforderlich sind. Dazu gehören in Österreich unter anderem:
+\begin{itemize}
+    \item Name und Anschrift des liefernden und empfangenden Unternehmers.
+    \item Menge und handelsübliche Bezeichnung der Gegenstände.
+    \item Tag der Lieferung oder sonstigen Leistung.
+    \item Entgelt (Netto) und der darauf entfallende Steuerbetrag.
+    \item Der anzuwendende Steuersatz.
+    \item Ausstellungsdatum und fortlaufende Nummer.
+    \item UID-Nummer des Leistenden (und ab 10.000 Euro Brutto auch des Empfängers).
+\end{itemize}
+
+Eine Besonderheit von ebInterface 6.1 ist die strikte Typisierung. Datumsfelder müssen dem ISO 8601 Format entsprechen, Beträge sind als Dezimalzahlen mit definierter Genauigkeit anzugeben. Dies verhindert Interpretationsspielräume, die bei OCR-basierten Verfahren oft zu Fehlern führen.
+
+\subsection{Beispielhafte XML-Struktur}
+Um die Struktur zu verdeutlichen, zeigt das folgende Listing einen gekürzten Ausschnitt einer validen ebInterface 6.1 Rechnung. Man erkennt deutlich die hierarchische Gliederung und die sprechenden Tag-Namen, die eine Implementierung erleichtern.
+
+\begin{lstlisting}[language=XML, caption={Ausschnitt einer ebInterface 6.1 Rechnung}, label={lst:ebinterface_example}]
+<Invoice xmlns="http://www.ebinterface.at/schema/6p1/" 
+         GeneratingSystem="SmartBillConverter">
+  <InvoiceNumber>2024-001</InvoiceNumber>
+  <InvoiceDate>2024-01-15</InvoiceDate>
+  <Delivery>
+    <Date>2024-01-10</Date>
+  </Delivery>
+  <Biller>
+    <VATIdentificationNumber>ATU12345678</VATIdentificationNumber>
+    <Address>
+      <Name>Musterfirma GmbH</Name>
+      <Street>Hauptstrasse 1</Street>
+      <Town>Wien</Town>
+      <ZIP>1010</ZIP>
+      <Country>Austria</Country>
+    </Address>
+  </Biller>
+  <Details>
+    <ItemList>
+      <ListLineItem>
+        <Description>Software Entwicklung</Description>
+        <Quantity Unit="h">10.00</Quantity>
+        <UnitPrice>100.00</UnitPrice>
+        <TaxItem>
+          <TaxPercent>20</TaxPercent>
+        </TaxItem>
+        <LineItemAmount>1000.00</LineItemAmount>
+      </ListLineItem>
+    </ItemList>
+  </Details>
+  <Tax>
+    <VAT>
+      <TaxedAmount>1000.00</TaxedAmount>
+      <TaxPercent>20</TaxPercent>
+      <Amount>200.00</Amount>
+    </VAT>
+  </Tax>
+  <TotalGrossAmount>1200.00</TotalGrossAmount>
+</Invoice>
+\end{lstlisting}
+
+Dieses Beispiel illustriert, wie essenziell die korrekte Verschachtelung ist. Ein häufiger Fehler bei der Generierung ist die Diskrepanz zwischen den berechneten Zeilensummen (\texttt{LineItemAmount}) und den Steuer-Aggregaten im \texttt{Tax}-Block.
+
+\section{ZUGFeRD 2.3 und EN 16931 (Deutschland/EU)}
+\label{sec:zugferd}
+
+\subsection{Das hybride Konzept}
+ZUGFeRD (Zentraler User Guide des Forums elektronische Rechnung Deutschland) verfolgt einen anderen Ansatz als ebInterface. Es ist ein hybrides Format, das die Vorteile der menschlichen Lesbarkeit mit der maschinellen Verarbeitbarkeit kombiniert. Eine ZUGFeRD-Rechnung ist technisch gesehen eine PDF/A-3 Datei.
+
+PDF/A-3 ist eine Erweiterung des PDF-Standards, die es erlaubt, beliebige Dateien als Anhang in das PDF einzubetten. Bei ZUGFeRD wird eine XML-Datei (genannt \texttt{factur-x.xml} oder \texttt{zugferd-invoice.xml}) in das PDF eingebettet. 
+\begin{itemize}
+    \item \textbf{Sichtbare Ebene}: Das PDF zeigt das Rechnungsbild, wie man es von Papier kennt.
+    \item \textbf{Unsichtbare Ebene}: Das eingebettete XML enthält die gleichen Daten in strukturierter Form.
+\end{itemize}
+Dieses Konzept löst das Akzeptanzproblem bei kleineren Empfängern: Wer keine Software zur automatischen Verarbeitung hat, behandelt die Datei wie ein normales PDF. Wer automatisieren will, extrahiert das XML.
+
+\subsection{Profile und Konformität}
+ZUGFeRD 2.3 implementiert die europäische Norm EN 16931. Da die Anforderungen je nach Unternehmensgröße und Branche variieren, definiert ZUGFeRD verschiedene Profile:
+
+\begin{enumerate}
+    \item \textbf{MINIMUM}: Enthält nur rudimentäre Daten, um eine Buchungshilfe zu bieten. Es erfüllt nicht die Anforderungen an eine steuerrechtliche Rechnung.
+    \item \textbf{BASIC WL (Without Lines)}: Enthält Kopfdaten und Summen, aber keine Positionsdaten. Nützlich für einfache Verbuchung, aber eingeschränkt in der Prüfung.
+    \item \textbf{BASIC}: Erfüllt die Anforderungen des deutschen UStG für Rechnungen unterhalb bestimmter Grenzen, ist aber eine Untermenge der EN 16931.
+    \item \textbf{EN 16931 (COMFORT)}: Das Standardprofil. Es bildet die europäische Norm vollständig ab und ist für den grenzüberschreitenden Verkehr sowie für B2G (Business to Government) geeignet. Dies ist das Zielformat für den \textit{SmartBillConverter}.
+    \item \textbf{EXTENDED}: Enthält zusätzliche branchenspezifische Erweiterungen, die über die Norm hinausgehen.
+\end{enumerate}
+
+\subsection{CII-Struktur (Cross Industry Invoice)}
+Das XML-Format innerhalb von ZUGFeRD basiert auf der \textit{Cross Industry Invoice} (CII) Syntax der UN/CEFACT. Dies ist ein globaler Standard für Lieferketten-Daten. Die Struktur ist extrem granular und tief verschachtelt. Ein einfacher Preis ist nicht nur eine Zahl, sondern ein komplexes Objekt mit Betrag, Währung, Basismenge und Einheitencode.
+
+Beispielhafte Struktur-Tiefe in CII:
+\texttt{SupplyChainTradeTransaction} $\rightarrow$ \texttt{IncludedSupplyChainTradeLineItem} $\rightarrow$ \texttt{SpecifiedLineTradeAgreement} $\rightarrow$ \texttt{NetPriceProductTradePrice} $\rightarrow$ \texttt{ChargeAmount}.
+Diese Komplexität macht die Implementierung eines Mappers anspruchsvoll, da hunderte von Pfaden korrekt befüllt werden müssen, um Validierungsfehler zu vermeiden.\footnote{Vgl. \cite{FeRD2024}}
+Im folgenden Listing ist ein Ausschnitt einer ZUGFeRD-XML dargestellt, der die Komplexität im Vergleich zu ebInterface verdeutlicht. Man beachte die tiefen Verschachtelungen für einfache Informationen wie den Steuerbetrag.
+
+\begin{lstlisting}[language=XML, caption={Ausschnitt einer ZUGFeRD 2.3 (CII) Rechnung}, label={lst:zugferd_example}]
+<rsm:CrossIndustryInvoice xmlns:rsm="urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100" ...>
+  <rsm:SupplyChainTradeTransaction>
+    <ram:IncludedSupplyChainTradeLineItem>
+      <ram:SpecifiedLineTradeAgreement>
+        <ram:NetPriceProductTradePrice>
+          <ram:ChargeAmount>100.00</ram:ChargeAmount>
+        </ram:NetPriceProductTradePrice>
+      </ram:SpecifiedLineTradeAgreement>
+      <ram:SpecifiedLineTradeSettlement>
+        <ram:ApplicableTradeTax>
+          <ram:TypeCode>VAT</ram:TypeCode>
+          <ram:CategoryCode>S</ram:CategoryCode>
+          <ram:RateApplicablePercent>19.00</ram:RateApplicablePercent>
+        </ram:ApplicableTradeTax>
+      </ram:SpecifiedLineTradeSettlement>
+    </ram:IncludedSupplyChainTradeLineItem>
+    <ram:ApplicableHeaderTradeSettlement>
+      <ram:SpecifiedTradeSettlementHeaderMonetarySummation>
+        <ram:LineTotalAmount>100.00</ram:LineTotalAmount>
+        <ram:TaxBasisTotalAmount>100.00</ram:TaxBasisTotalAmount>
+        <ram:TaxTotalAmount currencyID="EUR">19.00</ram:TaxTotalAmount>
+        <ram:GrandTotalAmount>119.00</ram:GrandTotalAmount>
+      </ram:SpecifiedTradeSettlementHeaderMonetarySummation>
+    </ram:ApplicableHeaderTradeSettlement>
+  </rsm:SupplyChainTradeTransaction>
+</rsm:CrossIndustryInvoice>
+\end{lstlisting}
+\section{UBL vs. CII: Mapping-Überlegungen und Trade-offs}
+\label{sec:ubl_cii}
+
+Die europäische Norm EN 16931 lässt zwei XML-Syntaxen zu: UBL (Universal Business Language) und UN/CEFACT CII. Während Netzwerke wie Peppol (Pan-European Public Procurement OnLine) historisch stark auf UBL (ISO/IEC 19845) setzen, hat sich das Forum elektronische Rechnung Deutschland (FeRD) bei ZUGFeRD für CII entschieden.
+
+\subsection{Strukturelle Unterschiede}
+\textbf{UBL} ist dokumentenzentriert. Es gibt eigene Schemas für \texttt{Order}, \texttt{Invoice}, \texttt{DespatchAdvice}. Die Struktur ist oft flacher und pragmatischer.
+\textbf{CII} ist prozesszentriert. Es versucht, alle Aspekte der Lieferkette in einem universellen Modell abzubilden. Dies führt zu einer höheren Abstraktion und Verschachtelung.
+
+Ein konkretes Beispiel ist die Handhabung von Steuern:
+\begin{itemize}
+    \item In \textbf{UBL} werden Steuern oft direkt auf Zeilenebene referenziert (\texttt{ClassifiedTaxCategory}).
+    \item In \textbf{CII} gibt es komplexe \texttt{ApplicableTradeTax}-Strukturen, die sowohl auf Dokumentenebene (Summen) als auch auf Zeilenebene (Referenzen) konsistent gehalten werden müssen.
+\end{itemize}
+
+\subsection{Herausforderungen für den Konverter}
+Für den \textit{SmartBillConverter} bedeutet dies, dass das interne Datenmodell (das C\# \texttt{Invoice}-Objekt) als "Intermediate Representation" fungieren muss. Es darf nicht zu stark an ebInterface gekoppelt sein, da sonst das Mapping auf CII extrem schwierig wird.
+Das Mapping von ebInterface (XML) direkt auf ZUGFeRD (CII) ist nicht trivial, da die semantischen Bäume unterschiedlich sind. ebInterface gruppiert oft logisch (z.B. "Biller"), während CII funktional gruppiert (z.B. "SupplyChainTradeTransaction").
+Die Entscheidung, eine eigene interne Repräsentation zu nutzen, die von der KI befüllt wird und dann in beide Formate serialisiert werden kann, ist daher architektonisch notwendig.
+Tabelle \ref{tab:format_comparison} fasst die wesentlichen Unterschiede zusammen, die bei der Implementierung berücksichtigt wurden.
+
+\begin{table}[h]
+    \centering
+    \begin{tabular}{|p{4cm}|p{5cm}|p{5cm}|}
+    \hline
+    \textbf{Merkmal} & \textbf{ebInterface 6.1} & \textbf{ZUGFeRD 2.3 (CII)} \\
+    \hline
+    Basis-Standard & National (AUSTRIAPRO) & International (UN/CEFACT) \\
+    \hline
+    Dateiformat & Reines XML & PDF/A-3 mit eingebettetem XML \\
+    \hline
+    Struktur-Tiefe & Flach bis Mittel & Sehr tief verschachtelt \\
+    \hline
+    Steuer-Logik & Zentraler Tax-Block & Verteilt (Line & Header) \\
+    \hline
+    Pflichtfelder & Fokus auf UStG (AT) & Fokus auf EN 16931 (EU) \\
+    \hline
+    Visualisierung & Benötigt Stylesheet & PDF ist menschenlesbar \\
+    \hline
+    \end{tabular}
+    \caption{Vergleich zwischen ebInterface und ZUGFeRD}
+    \label{tab:format_comparison}
+\end{table}
+\section{XSD-Validierung vs. Geschäftsregeln (BR-S-08 etc.)}
+\label{sec:validation}
+
+Die Qualitätssicherung einer generierten E-Rechnung erfolgt in zwei Stufen. Ein Dokument kann technisch valide sein, aber inhaltlich falsch.
+
+\subsection{Syntaktische Validierung (XSD)}
+Die XML Schema Definition (XSD) prüft die Grammatik der Datei.
+\begin{itemize}
+    \item Sind alle Pflicht-Tags vorhanden?
+    \item Haben Datumsfelder das Format YYYY-MM-DD?
+    \item Sind numerische Werte korrekt formatiert?
+    \item Stimmt die Reihenfolge der Elemente? (Besonders in CII ist die Reihenfolge strikt vorgegeben).
+\end{itemize}
+Ein Verstoß gegen das XSD führt dazu, dass die Datei vom Empfängersystem meist gar nicht erst eingelesen werden kann ("Technical Rejection").
+
+\subsection{Semantische Validierung (Business Rules)}
+Selbst wenn das XML wohlgeformt ist, kann der Inhalt unlogisch sein. Die EN 16931 definiert daher eine Liste von Geschäftsregeln (Business Rules), die eingehalten werden müssen. Diese werden oft mittels \textit{Schematron} geprüft.
+
+Ein prominentes und im Projektverlauf problematisches Beispiel ist die Regel \textbf{BR-S-08} (Value Added Tax Breakdown).
+Diese Regel besagt: \textit{Für jeden unterschiedlichen Steuercode und Steuersatz, der in den Rechnungspositionen verwendet wird, muss genau eine Zusammenfassung auf Dokumentenebene existieren, und die Summe der Steuerbeträge muss rechnerisch korrekt sein.}
+
+Das Problem bei der Generierung durch KI (LLMs) ist, dass LLMs statistische Modelle sind, keine Taschenrechner. Ein LLM kann problemlos schreiben:
+\begin{itemize}
+    \item Position 1: 100 Euro, 20\% MwSt
+    \item Position 2: 200 Euro, 20\% MwSt
+    \item Steuer-Summe: 55 Euro (statt korrekt 60 Euro)
+\end{itemize}
+Das LLM "schätzt" oder "halluziniert" die Summe oft, anstatt sie zu berechnen.
+Daher darf die Berechnung der Summen und Steuern \textbf{niemals} der KI überlassen werden. Die KI extrahiert die Einzelwerte (Menge, Preis, Steuersatz), aber die Aggregation und die Erstellung des \texttt{TaxBreakdown} für die Regel BR-S-08 muss durch deterministische Algorithmen im Backend (C\#) erfolgen. Nur so kann die Validierung gegen Schematron-Regeln bestanden werden.\footnote{Vgl. \cite{CEN2017}}
+
+\chapter{Dokumentenverarbeitung und KI-Grundlagen}
+\label{chap:doc_processing_ai}
+
+Die automatisierte Verarbeitung von Rechnungen ist ein klassisches Problem der Informatik, das durch moderne KI-Ansätze neu gelöst wird. Traditionelle Ansätze basierten auf Templates (Schablonen), bei denen für jeden Lieferanten definiert wurde, an welchen Koordinaten die Rechnungsnummer steht. Dieser Ansatz ist jedoch fragil und skaliert nicht. Der \textit{SmartBillConverter} setzt daher auf einen generischen Ansatz mittels Large Language Models (LLMs). Dieses Kapitel beleuchtet die technologischen Grundlagen.
+
+\section{PDFs und Textextraktion}
+\label{sec:pdf_extraction}
+
+\subsection{Die Natur des PDF-Formats}
+Das Portable Document Format (PDF) wurde von Adobe entwickelt, um Dokumente geräteunabhängig darzustellen. Es ist ein Seitenbeschreibungssprache. Das bedeutet, ein PDF speichert primär Anweisungen wie "Zeichne den Buchstaben "A" an Koordinate (100, 200) in Schriftart Helvetica".
+Es speichert \textit{nicht} notwendigerweise die Information, dass dieses "A" Teil des Wortes "Rechnung" ist oder dass dieses Wort Teil einer Tabelle ist.
+
+Für die Textextraktion ergeben sich daraus massive Probleme:
+\begin{itemize}
+    \item \textbf{Verlust der Lesereihenfolge}: In einem PDF-Stream können die Zeichenbefehle in beliebiger Reihenfolge stehen. Ein zweispaltiger Text kann im Stream so gespeichert sein, dass erst die erste Zeile der linken Spalte, dann die erste Zeile der rechten Spalte kommt. Ein naiver Extraktor liest dann "Rechnungs Datum: 01.01.2024" als "Rechnungs 01.01.2024 Datum:".
+    \item \textbf{Fehlende Wortgrenzen}: Oft werden Wörter nicht als String gespeichert, sondern jeder Buchstabe einzeln positioniert (Kerning). Leerzeichen sind oft gar keine Zeichen, sondern einfach Lücken in den Koordinaten.
+    \item \textbf{Encoding-Probleme}: Manchmal nutzen PDFs benutzerdefinierte Encodings, sodass der Buchstabe "A" im Code als "X" gespeichert ist, aber visuell als "A" dargestellt wird. Ohne korrekte ToUnicode-Map ist nur "Datensalat" extrahierbar.
+\end{itemize}
+
+\subsection{Lösungsansatz mit PdfPig}
+Im Projekt wird die Bibliothek \textit{PdfPig} eingesetzt. Sie versucht, die logische Struktur aus den geometrischen Informationen zu rekonstruieren.
+PdfPig analysiert die "Bounding Boxes" aller Buchstaben. Durch Heuristiken (Abstandsanalyse) werden Buchstaben zu Wörtern und Wörter zu Zeilen zusammengefügt.
+Ein spezifisches Problem bei Rechnungen sind Tabellen. Da Tabellenlinien im PDF nur Vektorgrafiken sind und keine logische Verbindung zum Text haben, ist es für Algorithmen schwer zu erkennen, welche Zahl zu welcher Spalte gehört, besonders wenn Spalten rechtsbündig sind und der Textabstand variiert.
+Dennoch liefert die direkte Extraktion aus dem PDF-Stream (wenn möglich) immer präzisere Daten als der Umweg über OCR, da keine Zeichenverwechslungen (z.B. "8" vs "B") auftreten können.\footnote{Vgl. \cite{PdfPig2024}}
+
+\section{OCR mit Tesseract}
+\label{sec:ocr}
+
+Wenn Rechnungen nicht als digitales PDF, sondern als Scan (Rastergrafik) vorliegen, greift die Textextraktion ins Leere. Hier ist Optical Character Recognition (OCR) erforderlich.
+
+\subsection{Funktionsweise von Tesseract}
+Tesseract ist eine der führenden Open-Source-OCR-Engines, ursprünglich von HP entwickelt und heute von Google gepflegt. Moderne Versionen (ab 4.0) basieren auf LSTM (Long Short-Term Memory) neuronalen Netzen, einer Form von Recurrent Neural Networks (RNNs), die besonders gut für Sequenzdaten wie Text geeignet sind.
+Tesseract analysiert das Bild in mehreren Schritten:
+1.  **Layout Analysis**: Finden von Textblöcke und Zeilen.
+2.  **Baseline Fitting**: Erkennen der Grundlinie einer Textzeile (wichtig bei schiefen Scans).
+3.  **Character Recognition**: Das neuronale Netz klassifiziert kleine Bildausschnitte als Zeichen.
+4.  **Word Recognition**: Wörterbuch-Abgleich, um die Wahrscheinlichkeit von Wortkombinationen zu bewerten.
+
+\subsection{Einflussfaktoren auf die Qualität}
+Die Qualität der OCR hängt massiv von der Vorverarbeitung ab:
+\begin{itemize}
+    \item \textbf{Auflösung}: Unter 300 DPI sinkt die Erkennungsrate drastisch.
+    \item \textbf{Binarisierung}: Die Umwandlung von Graustufen in reines Schwarz-Weiß (Thresholding) muss adaptiv erfolgen, um Schatten oder ungleichmäßige Beleuchtung auszugleichen.
+    \item \textbf{Deskewing}: Schon eine Drehung um 1-2 Grad kann die Zeilenerkennung stören. Das Bild muss rechnerisch gerade gerückt werden.
+\end{itemize}
+Im Projektkontext werden für Tesseract spezifische Sprachpakete (\texttt{deu.traineddata}) geladen, um deutsche Umlaute und typische Vokabeln korrekt zu erkennen. Dennoch bleibt OCR fehleranfällig, weshalb die nachgelagerte KI-Korrektur essenziell ist.
+
+\section{LLMs für Informationsextraktion}
+\label{sec:llm_extraction}
+
+Der Paradigmenwechsel in der Dokumentenverarbeitung kommt durch Large Language Models (LLMs). Anstatt Regeln zu programmieren ("Suche nach "Rechnungs-Nr." und nimm das Wort rechts daneben"), übergibt man dem LLM den gesamten unstrukturierten Text und bittet es, die Daten zu strukturieren.
+
+\subsection{Architektur und Funktionsweise}
+LLMs basieren auf der Transformer-Architektur. Sie wurden auf riesigen Textmengen trainiert und haben gelernt, statistische Zusammenhänge zwischen Wörtern (Tokens) vorherzusagen.
+Für die Extraktion ist die Fähigkeit des "In-Context Learning" entscheidend. Das Modell versteht den Kontext einer Rechnung. Es weiß, dass eine IBAN meist in der Nähe von "Bankverbindung" steht und wie eine IBAN aussieht, ohne dass man ihm einen Regex geben muss.
+Es kann Synonyme auflösen: Egal ob auf der Rechnung "Total", "Gesamtbetrag", "Zahlbetrag" oder "Summe" steht, das LLM kann es auf das Feld \texttt{TotalAmount} mappen.
+
+\subsection{Modell-Vergleich und Evaluation}
+Im Rahmen der Entwicklung wurden verschiedene Modelle evaluiert (siehe Projektdokumentation):
+\begin{itemize}
+    \item \textbf{Gemini 2.5 Flash}: Ein sehr schnelles und kosteneffizientes Modell von Google. Es zeigte im Projekt die beste Balance aus Geschwindigkeit und JSON-Konformität. Es hat ein großes Kontextfenster, was für lange Rechnungen wichtig ist.
+    \item \textbf{Mistral (verschiedene Größen)}: Open-Source-Modelle, die lokal oder via API laufen können. Während große Modelle (Mistral Large) gut performen, neigen kleinere Modelle (7B) dazu, das JSON-Schema zu verletzen oder komplexe Tabellen zu halluzinieren.
+    \item \textbf{Qwen}: Ein starkes Modell, das jedoch im Test oft Prompt-Logging und Training erforderte, was Datenschutzbedenken aufwirft.
+\end{itemize}
+
+\subsection{Risiken: Halluzinationen}
+Das größte Risiko bei LLMs ist die Halluzination. Das Modell ist darauf trainiert, eine "plausible Fortsetzung" des Textes zu generieren. Wenn auf der Rechnung kein Lieferdatum steht, das JSON-Schema aber ein Lieferdatum verlangt, "erfindet" das Modell oft einfach eines (z.B. das Rechnungsdatum), um den User zufrieden zu stellen.
+Dies ist fatal für eine Finanzanwendung. Daher muss der Prompt so gestaltet sein, dass das Modell explizit "null" oder "nicht vorhanden" ausgibt, anstatt zu raten.
+
+\section{Prompt-Design für deterministische Ausgabe}
+\label{sec:prompt_design}
+
+Prompt Engineering ist die Kunst, die Eingabe so zu formulieren, dass das Modell das gewünschte Ergebnis liefert. Für die API-basierte Extraktion ist Determinismus das Ziel.
+
+\subsection{Techniken}
+\begin{itemize}
+    \item \textbf{System Prompting}: Dem Modell wird eine klare Rolle zugewiesen: "Du bist ein strikter Datenextraktions-Assistent. Du antwortest nur mit JSON. Du fügst keine Erklärungen hinzu."
+    \item \textbf{JSON Mode / Function Calling}: Moderne APIs (wie OpenAI oder Gemini) bieten Modi an, die garantieren, dass der Output valides JSON ist. Das Modell wird gezwungen, Tokens zu generieren, die der Syntax entsprechen.
+    \item \textbf{Schema Injection}: Das gewünschte JSON-Schema wird im Prompt mitgegeben. "Extrahiere die Daten in folgendes Format: \{ "invoiceNumber": "string", ... \}".
+\textbf{Chain-of-Thought Unterdrückung}: Während bei Logikaufgaben "Denk nach Schritt für Schritt" hilft, ist es bei der Extraktion oft hinderlich, da es den Output "verunreinigt". Wir wollen nur die Daten.
+\end{itemize}
+
+Ein Beispiel für ein solches JSON-Schema, wie es im \textit{SmartBillConverter} verwendet wird, zeigt Listing \ref{lst:json_schema}. Es definiert strikte Typen für die Extraktion.
+
+\begin{lstlisting}[language=json, caption={JSON-Schema für die KI-Extraktion}, label={lst:json_schema}]
+{
+  "type": "object",
+  "properties": {
+    "invoiceNumber": { "type": "string" },
+    "invoiceDate": { "type": "string", "format": "date" },
+    "totalAmount": { "type": "number" },
+    "currency": { "type": "string", "enum": ["EUR", "USD"] },
+    "items": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "description": { "type": "string" },
+          "quantity": { "type": "number" },
+          "unitPrice": { "type": "number" },
+          "taxRate": { "type": "number" }
+        }
+      }
+    }
+  },
+  "required": ["invoiceNumber", "invoiceDate", "totalAmount", "items"]
+}
+\end{lstlisting}
+
+Ein spezifisches Problem im Projekt war die Konsistenz. Manchmal lieferte das gleiche Modell beim gleichen Prompt leicht unterschiedliche Ergebnisse (z.B. Datumsformat mal YYYY-MM-DD, mal DD.MM.YYYY). Dies muss durch strikte Anweisungen ("Formatiere alle Daten als ISO 8601") und niedrige Temperature-Einstellungen (Temperature = 0) minimiert werden.
+
+\section{Datenschutz und Sicherheit in KI-APIs}
+\label{sec:ai_security}
+
+Die Nutzung von Cloud-basierten KI-APIs (wie Google Vertex AI oder OpenAI API) für Rechnungsdaten wirft Datenschutzfragen auf, da Rechnungen personenbezogene Daten (Namen, Adressen) und Geschäftsgeheimnisse (Preise, Lieferantenbeziehungen) enthalten.
+
+\subsection{Risikoanalyse}
+\begin{itemize}
+    \item \textbf{Training auf Kundendaten}: Das größte Risiko ist, dass der Anbieter (Google, OpenAI) die hochgeladenen Rechnungen nutzt, um seine Modelle zu trainieren. Dies könnte dazu führen, dass das Modell in Zukunft Informationen aus diesen Rechnungen "weiß". Enterprise-Verträge schließen dies meist explizit aus ("Zero Data Retention" für Training).
+    \item \textbf{Datenübertragung}: Die Daten verlassen das geschützte Unternehmensnetzwerk. Eine Ende-zu-Ende-Verschlüsselung (TLS 1.3) ist Standard, aber der API-Endpunkt entschlüsselt die Daten zur Verarbeitung.
+    \item \textbf{Serverstandort}: Nach DSGVO sollten personenbezogene Daten idealerweise den Europäischen Wirtschaftsraum (EWR) nicht verlassen. Bei US-Anbietern ist auf Angemessenheitsbeschlüsse (Data Privacy Framework) zu achten.
+\end{itemize}
+
+\subsection{Lokale Alternativen}
+Um diese Risiken zu eliminieren, wäre der Einsatz lokaler LLMs (z.B. Llama 3, Mistral) via Ollama oder LM Studio eine Option. Diese laufen auf der eigenen Hardware (On-Premise).
+Der Nachteil ist der hohe Ressourcenbedarf (GPU-VRAM) und die oft schlechtere Leistung im Vergleich zu den riesigen Cloud-Modellen. Ein lokales 7B-Modell hat oft Schwierigkeiten mit komplexen, mehrseitigen Rechnungen, die ein großes Kontextfenster benötigen.
+Für den \textit{SmartBillConverter} wurde aufgrund der Qualität und Entwicklungsgeschwindigkeit auf Cloud-APIs gesetzt, wobei im Produktionsbetrieb auf Enterprise-Lizenzen mit entsprechenden Datenschutzgarantien gewechselt werden müsste.
