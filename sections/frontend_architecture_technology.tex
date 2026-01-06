@@ -1,0 +1,170 @@
+\setauthor{Luis Schörgendorfer}
+\chapter{Frontend-Architektur \& Technologie-Stack}
+\label{chap:frontend_architecture_technology}
+
+Die Wahl des richtigen Technologie-Stacks ist wichtig für den Projekterfolg. Dieses Kapitel dokumentiert die Architekturentscheidungen und die technologische Grundlage des \textit{SmartBillConverter}-Frontends.
+
+\section{Projektinitialisierung mit Angular CLI}
+\label{sec:angular_project_init}
+
+\subsection{Framework-Evaluation}
+Die Wahl fiel auf Angular 19 aus folgenden Gründen:
+
+\begin{itemize}
+    \item \textbf{Firmenanforderungen}: Das Partnerunternehmen gab keine konkrete Framework-Vorgabe, sondern ermöglichte eine freie Technologiewahl für das Frontend.
+    \item \textbf{Schulische Vorkenntnisse}: Angular wurde im laufenden Schuljahr ausführlich behandelt, wodurch eine solide Wissensbasis vorhanden war.
+    \item \textbf{Backend-Kompatibilität}: Das vorgegebene C\#-Backend harmoniert gut mit Angular, da beide auf TypeScript bzw. stark typisierten Sprachen basieren.
+    \item \textbf{Webapplikations-Eignung}: Für die geforderte Single-Page-Webapplikation bietet Angular eine ausgereifte Lösung mit integriertem Routing, HTTP-Client und Dependency Injection.
+\end{itemize}
+
+\subsection{Projektsetup}
+Die Initialisierung erfolgte über die Angular CLI:
+
+\begin{lstlisting}[language=bash, caption={Angular-Projektgenerierung}]
+ng new smart-bill-ui --routing --style=css --strict
+cd smart-bill-ui
+ng serve
+\end{lstlisting}
+
+Der Befehl \texttt{ng serve} startet einen Entwicklungsserver mit Hot Module Replacement. Für Produktion wird ein optimierter Build mit AOT-Kompilierung, Tree Shaking und Minification erstellt.
+
+\section{Auswahl der Bibliotheken}
+\label{sec:library_selection}
+
+\subsection{Bootstrap 5.3.7}
+Bootstrap wurde als CSS-Framework gewählt, weil es im schulischen Kontext bereits verwendet wurde und somit Vorkenntnisse im Umgang mit dem Grid-System, UI-Komponenten und Utility-Klassen vorhanden waren. Dies beschleunigte die Frontend-Entwicklung erheblich.\footnote{Vgl. Bootstrap Team: \textit{Bootstrap 5 Documentation}, \url{https://getbootstrap.com/docs/5.3/}, abgerufen am 15.01.2025}
+
+\begin{lstlisting}[language=bash]
+npm install bootstrap@5.3.7
+\end{lstlisting}
+
+Die Integration erfolgte in \texttt{styles.css}:
+\begin{lstlisting}
+@import 'bootstrap/dist/css/bootstrap.min.css';
+\end{lstlisting}
+
+\subsection{ng2-pdf-viewer 10.4.0}
+Für die PDF-Vorschau wurde \texttt{ng2-pdf-viewer} gewählt. Bei der Suche nach einer einfachen Lösung zur Anzeige von PDFs im Browser erwies sich diese Bibliothek als geeignet, da sie direkt für Angular entwickelt wurde und eine unkomplizierte Integration ermöglicht.\footnote{Vgl. Mozilla Foundation: \textit{PDF.js Documentation}, \url{https://mozilla.github.io/pdf.js/}, abgerufen am 15.01.2025}
+
+\begin{lstlisting}[language=bash]
+npm install ng2-pdf-viewer@10.4.0
+\end{lstlisting}
+
+Template-Integration:
+\begin{lstlisting}[language=html]
+<pdf-viewer [src]="pdfData" [render-text]="true"></pdf-viewer>
+\end{lstlisting}
+
+\section{Projektstruktur}
+\label{sec:project_structure}
+
+Angular folgt einer modularen Architektur mit Komponenten, Services und Routing:
+
+\begin{lstlisting}[caption={Projektstruktur smart-bill-ui}]
+src/app/
+  components/
+    upload/
+      upload.component.ts       # Datei-Upload-Logik
+      upload.component.html     # Upload-UI mit Drag & Drop
+    invoice-list/
+      invoice-list.component.ts # Rechnungsuebersicht
+    processing/
+      processing.component.ts   # Verarbeitungsstatus
+  services/
+    invoice.service.ts          # HTTP-Kommunikation
+  models/
+    invoice.model.ts            # TypeScript-Interfaces
+  app.routes.ts                 # Routing-Konfiguration
+  app.config.ts                 # Provider-Setup
+\end{lstlisting}
+
+\subsection{Komponenten-Architektur}
+Die Anwendung besteht aus drei Hauptkomponenten:
+
+\begin{itemize}
+    \item \textbf{UploadComponent}: Datei-Upload via Drag \& Drop oder File-Input. Unterstützt Multi-File-Upload und zeigt Fortschrittsbalken. Validiert Dateitypen (PDF, PNG, JPEG) und Größenlimits.
+    \item \textbf{InvoiceListComponent}: Zeigt Liste der hochgeladenen Rechnungen mit Status (pending, processing, completed, error). Erlaubt Download von ebInterface/ZUGFeRD-XML.
+    \item \textbf{ProcessingComponent}: Zeigt Verarbeitungsstatus und Fehler. Stellt OCR-Ergebnisse und extrahierte Daten dar.
+\end{itemize}
+
+\subsection{Services und Dependency Injection}
+Der \texttt{InvoiceService} verwaltet die HTTP-Kommunikation mit dem Backend:
+
+\begin{lstlisting}[language=TypeScript, caption={Invoice Service}]
+@Injectable({ providedIn: 'root' })
+export class InvoiceService {
+  private apiUrl = 'http://localhost:5000/api';
+  
+  constructor(private http: HttpClient) {}
+  
+  uploadInvoice(file: File): Observable<UploadResponse> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.http.post<UploadResponse>(
+      `${this.apiUrl}/upload`, formData
+    );
+  }
+  
+  getInvoices(): Observable<Invoice[]> {
+    return this.http.get<Invoice[]>(`${this.apiUrl}/invoices`);
+  }
+}
+\end{lstlisting}
+
+Der Service funktioniert folgendermaßen:
+
+\begin{itemize}
+    \item \textbf{@Injectable}: Macht den Service für andere Komponenten verfügbar. \texttt{providedIn: 'root'} bedeutet, dass es nur eine Instanz im gesamten Projekt gibt.
+    \item \textbf{apiUrl}: Speichert die Backend-Adresse (\texttt{http://localhost:5000/api}). Alle Anfragen gehen an diese URL.
+    \item \textbf{constructor}: Bekommt den \texttt{HttpClient} automatisch von Angular bereitgestellt. Damit können HTTP-Anfragen (GET, POST) gesendet werden.
+    \item \textbf{uploadInvoice}: Erstellt ein \texttt{FormData}-Objekt (benötigt für Datei-Uploads), hängt die Datei an und sendet sie per POST an \texttt{/api/upload}. Gibt ein \texttt{Observable} zurück, das später die Antwort vom Server liefert.
+    \item \textbf{getInvoices}: Holt alle Rechnungen vom Backend per GET-Anfrage an \texttt{/api/invoices}. Gibt ein \texttt{Observable} zurück, das ein Array von Rechnungen enthält.
+\end{itemize}
+
+Das \texttt{Observable}-Pattern ermöglicht asynchrone Datenverarbeitung: Die Komponente abonniert das Observable mit \texttt{.subscribe()} und erhält die Daten, sobald die Server-Antwort eingetroffen ist.
+
+\section{Routing-Konfiguration}
+\label{sec:routing_config}
+
+Das Routing definiert, welche Komponente bei welcher URL angezeigt wird:
+
+\begin{lstlisting}[language=TypeScript, caption={Routing in app.routes.ts}]
+export const routes: Routes = [
+  { path: '', redirectTo: '/upload', pathMatch: 'full' },
+  { path: 'upload', component: UploadComponent },
+  { path: 'invoices', component: InvoiceListComponent },
+  { path: 'processing/:id', component: ProcessingComponent },
+  { path: '**', redirectTo: '/upload' }
+];
+\end{lstlisting}
+
+Die Routen erlauben:
+\begin{itemize}
+    \item \texttt{/upload}: Zeigt die Upload-Seite an (Standardroute). Wenn jemand auf die Startseite geht (\texttt{/}), wird automatisch auf \texttt{/upload} weitergeleitet.
+    \item \texttt{/invoices}: Zeigt die Rechnungsübersicht mit allen hochgeladenen Rechnungen.
+    \item \texttt{/processing/:id}: Zeigt den Verarbeitungsstatus einer bestimmten Rechnung. Die \texttt{:id} ist ein Platzhalter, z.B. \texttt{/processing/123} zeigt den Status von Rechnung 123.
+    \item \texttt{**}: Wildcard-Route, die bei ungültigen URLs greift. Leitet zurück auf \texttt{/upload}, falls jemand eine nicht existierende Seite aufruft.
+\end{itemize}
+
+\subsection{Navigation}
+Die Navigation kann auf zwei Arten erfolgen:
+
+\textbf{Programmatisch im TypeScript-Code:}
+\begin{lstlisting}[language=TypeScript]
+constructor(private router: Router) {}
+
+navigateToProcessing(invoiceId: number): void {
+  this.router.navigate(['/processing', invoiceId]);
+}
+\end{lstlisting}
+
+Hier wird der \texttt{Router}-Service verwendet, um per Code zu einer anderen Seite zu wechseln. Die Methode \texttt{navigate()} bekommt ein Array mit dem Pfad und den Parametern (z.B. \texttt{['/processing', 123]} wird zu \texttt{/processing/123}).
+
+\textbf{Im HTML-Template mit routerLink:}
+\begin{lstlisting}[language=html]
+<a routerLink="/invoices" routerLinkActive="active">
+  Rechnungen
+</a>
+\end{lstlisting}
+
+Die \texttt{routerLink}-Direktive erstellt einen anklickbaren Link. \texttt{routerLinkActive="active"} fügt automatisch die CSS-Klasse \texttt{active} hinzu, wenn der Benutzer auf dieser Seite ist (nützlich für Navigation-Highlighting).

@@ -1,0 +1,450 @@
+\setauthor{Luis Schörgendorfer}
+\begin{spacing}{1}
+\chapter{Implementierung der Upload-Komponente und Multi-File-System}\label{chapter:upload-implementation}
+\end{spacing}
+
+Die Upload-Komponente ist das Hauptelement der SmartBillConverter-Anwendung. Sie steuert den gesamten Prozess vom Hochladen der Dateien bis zur Erstellung der XML-Dateien.
+
+\section{Entwicklung der Upload-Komponente mit Drag-and-Drop}
+
+Die Upload-Komponente wurde als eigenständige Angular-Komponente entwickelt. Sie nutzt die neue \texttt{@for}- und \texttt{@if}-Syntax von Angular 19 und \texttt{@ViewChild}, um auf HTML-Elemente im Template zuzugreifen.
+
+\subsection{Aufbau der Komponente}
+
+Die Komponente wird mit dem \texttt{@Component}-Decorator konfiguriert:
+
+\begin{lstlisting}[language={[Sharp]C},caption={Upload-Component Decorator-Konfiguration},label={lst:upload-decorator}]
+@Component({
+  selector: 'app-upload',
+  standalone: true,
+  imports: [CommonModule, PdfViewerModule, HttpClientModule],
+  providers: [InvoiceService],
+  templateUrl: './upload.component.html',
+  styleUrl: './upload.component.css'
+})
+export class UploadComponent {
+  @ViewChild('fileInput') fileInput!: ElementRef<HTMLInputElement>;
+  selectedFiles: FileUploadItem[] = [];
+  selectedFormat: 'ebInterface' | 'ZUGFeRD' | null = null;
+  isDragOver = false;
+  isProcessing = false;
+  
+  constructor(private invoiceService: InvoiceService) {}
+}
+\end{lstlisting}
+
+Der Parameter \texttt{standalone: true} bedeutet, dass die Komponente unabhängig funktioniert und nicht in ein zusätzliches Modul eingebunden werden muss. Das macht den Code übersichtlicher.
+
+\subsection{Drag-and-Drop-Funktion}
+
+Für das Hochladen per Drag-and-Drop werden drei Event-Handler verwendet:
+
+\begin{lstlisting}[language=HTML,caption={Drag-and-Drop Template},label={lst:drag-drop-template}]
+<div class="upload-area"
+  [class.drag-over]="isDragOver"
+  (dragover)="onDragOver($event)"
+  (drop)="onDrop($event)"
+  (click)="fileInput.click()">
+  <i class="bi bi-cloud-upload display-1"></i>
+  <h4>Dateien hier ablegen oder klicken zum Auswaehlen</h4>
+  <p>PDF, PNG, JPG, BMP, TIFF, GIF - Max. 10MB pro Datei</p>
+</div>
+\end{lstlisting}
+
+Die Event-Handler verhindern das Standard-Browserverhalten (Datei öffnen) und verarbeiten stattdessen die Dateien in der Anwendung:
+
+\begin{lstlisting}[language={[Sharp]C},caption={Event-Handler-Implementierung},label={lst:drag-drop-handlers}]
+onDragOver(event: DragEvent): void {
+  event.preventDefault();
+  this.isDragOver = true;
+}
+
+onDrop(event: DragEvent): void {
+  event.preventDefault();
+  this.isDragOver = false;
+  if (event.dataTransfer?.files) {
+    const fileArray = Array.from(event.dataTransfer.files);
+    this.handleMultipleFiles(fileArray);
+  }
+}
+\end{lstlisting}
+
+\subsection{Dateien prüfen und Vorschau erstellen}
+
+Die Methode \texttt{handleMultipleFiles} prüft, ob die Dateien unterstützte Formate haben, und erstellt Vorschauen:
+
+\begin{lstlisting}[language={[Sharp]C},caption={Multi-File-Handling mit Validierung},label={lst:handle-files}]
+private handleMultipleFiles(files: File[]): void {
+  files.forEach(file => {
+    const supportedTypes = ['application/pdf', 'image/png', 
+                          'image/jpeg', 'image/bmp'];
+    if (!supportedTypes.includes(file.type)) {
+      this.showFileTypeError(file.name);
+      return;
+    }
+    
+    const fileItem: FileUploadItem = {
+      file: file,
+      id: `file_${Date.now()}_${Math.random()}`,
+      status: 'pending'
+    };
+    
+    this.loadFilePreview(fileItem);
+    this.selectedFiles.push(fileItem);
+  });
+}
+\end{lstlisting}
+
+Für die Vorschau wird zwischen Bildern und PDFs unterschieden. Bilder werden als Data-URL geladen, PDFs als Binärdaten:
+
+\begin{lstlisting}[language={[Sharp]C},caption={FileReader API für Vorschauen},label={lst:preview}]
+private loadFilePreview(fileItem: FileUploadItem): void {
+  const reader = new FileReader();
+  
+  if (fileItem.file.type.startsWith('image/')) {
+    reader.onload = (e) => fileItem.previewUrl = e.target?.result as string;
+    reader.readAsDataURL(fileItem.file);
+  } else if (fileItem.file.type === 'application/pdf') {
+    reader.onload = (e) => {
+      fileItem.pdfData = new Uint8Array(e.target?.result as ArrayBuffer);
+    };
+    reader.readAsArrayBuffer(fileItem.file);
+  }
+}
+\end{lstlisting}
+
+Die HTML5 FileReader API bietet zwei Methoden: \texttt{readAsDataURL()} für Bilder (als Base64-String) und \texttt{readAsArrayBuffer()} für PDFs (als Binärdaten für den PDF-Viewer).
+
+\section{PDF-Vorschau anzeigen}
+
+Für die PDF-Vorschau wird die Bibliothek \texttt{ng2-pdf-viewer} verwendet.
+
+\subsection{Einbindung des PDF-Viewers}
+
+\begin{lstlisting}[language=bash,caption={ng2-pdf-viewer Installation},label={lst:pdf-install}]
+npm install ng2-pdf-viewer@10.4.0
+\end{lstlisting}
+
+Die PDF-Vorschau wird in einem Bootstrap-Modal (Popup-Fenster) angezeigt:
+
+\begin{lstlisting}[language=HTML,caption={PDF-Viewer im Modal-Dialog},label={lst:pdf-modal}]
+@if (showPreview && pdfData) {
+  <div class="modal fade show d-block">
+    <div class="modal-dialog modal-xl">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5>PDF Vorschau: {{ getPreviewFileName() }}</h5>
+          <button class="btn-close" (click)="togglePreview()"></button>
+        </div>
+        <div class="modal-body">
+          <pdf-viewer 
+            [src]="pdfData"
+            [render-text]="true"
+            [show-all]="true"
+            [fit-to-page]="true"
+            style="width: 100%; height: 70vh;">
+          </pdf-viewer>
+        </div>
+      </div>
+    </div>
+  </div>
+}
+\end{lstlisting}
+
+Die Optionen bedeuten: \texttt{[render-text]} aktiviert Text-Auswahl und Suche, \texttt{[show-all]} zeigt alle Seiten gleichzeitig, \texttt{[fit-to-page]} passt die Größe an die Fensterbreite an. Das PDF wird als \texttt{Uint8Array} (Binärdaten) über \texttt{[src]} übergeben.
+
+\subsection{Speicher freigeben}
+
+Beim Schließen der Vorschau werden Blob-URLs freigegeben, um Speicherprobleme zu vermeiden:
+
+\begin{lstlisting}[language={[Sharp]C},caption={Vorschau-Steuerung mit Cleanup},label={lst:preview-control}]
+showFilePreview(fileId: string): void {
+  const fileItem = this.selectedFiles.find(f => f.id === fileId);
+  if (fileItem) {
+    this.pdfData = fileItem.pdfData;
+    this.previewFileId = fileId;
+    this.showPreview = true;
+  }
+}
+
+togglePreview(): void {
+  this.showPreview = false;
+  if (this.previewUrl) {
+    URL.revokeObjectURL(this.previewUrl);
+  }
+}
+\end{lstlisting}
+
+Die Methode \texttt{URL.revokeObjectURL()} gibt Speicher frei, der von \texttt{URL.createObjectURL()} belegt wurde. Das ist wichtig, weil Browser diese URLs sonst bis zum Schließen der Seite speichern.
+
+
+
+\section{Datenstruktur für hochgeladene Dateien}
+
+Das \texttt{FileUploadItem}-Interface definiert, welche Informationen für jede hochgeladene Datei gespeichert werden:
+
+\begin{lstlisting}[language={[Sharp]C},caption={FileUploadItem Interface-Definition},label={lst:file-upload-item}]
+interface FileUploadItem {
+  file: File;                // Original File-Objekt
+  id: string;               // Eindeutiger Identifier
+  status: 'pending' | 'processing' | 'completed' | 'error'; // Status
+  progress?: number;        // Upload-Fortschritt (0-100)
+  result?: any;            // Server-Response
+  errorMessage?: string;   // Fehlermeldung bei Fehler
+  previewUrl?: string;     // Data-URL für Bildvorschau
+  pdfData?: Uint8Array;    // Binärdaten für PDF-Vorschau
+}
+\end{lstlisting}
+
+Der Status kann vier Werte haben: \texttt{pending} (wartet auf Verarbeitung), \texttt{processing} (wird gerade verarbeitet), \texttt{completed} (erfolgreich abgeschlossen) oder \texttt{error} (Fehler aufgetreten). TypeScript prüft automatisch, dass nur diese Werte verwendet werden.
+
+Anstelle eines Enums wurde ein Union-Type verwendet. Das hat folgende Vorteile: Einfacherer Vergleich mit Strings, kleinere Dateigröße und einfachere Umwandlung in JSON.
+
+\subsection{Dateien verwalten}
+
+Die Komponente verwaltet alle hochgeladenen Dateien in einem Array:
+
+\begin{lstlisting}[language={[Sharp]C},caption={File-Array-Management-Methoden},label={lst:array-management}]
+// Hinzufügen neuer Dateien
+this.selectedFiles.push(fileItem);
+
+// Status-Update während Verarbeitung
+const currentFile = this.selectedFiles[this.currentProcessingIndex];
+currentFile.status = 'processing';
+
+// Entfernen einzelner Dateien
+removeSingleFile(fileId: string): void {
+  this.selectedFiles = this.selectedFiles.filter(f => f.id !== fileId);
+}
+
+// Alle Dateien löschen
+clearAllFileData(): void {
+  this.selectedFiles = [];
+  this.allResults = [];
+  this.processedCount = 0;
+}
+\end{lstlisting}
+
+Die \texttt{filter()}-Methode erstellt ein neues Array ohne die zu entfernende Datei. Das ist wichtig für Angular's Change Detection (die automatische UI-Aktualisierung), die nur auf Änderungen der Array-Referenz reagiert. Eine direkte Änderung mit \texttt{splice()} würde die Referenz nicht ändern und die UI würde möglicherweise nicht aktualisiert werden.
+
+Im HTML-Template werden die Dateien mit \texttt{@for} angezeigt:
+
+\begin{lstlisting}[language=HTML,caption={Template mit FileUploadItem-Array},label={lst:template-for}]
+@for (fileItem of selectedFiles; track fileItem.id) {
+  <div class="list-group-item">
+    <h6>{{ fileItem.file.name }}</h6>
+    <div class="progress">
+      <div class="progress-bar" 
+           [class.bg-success]="fileItem.status === 'completed'"
+           [class.bg-danger]="fileItem.status === 'error'"
+           [style.width.%]="getProgressPercentage(fileItem)">
+      </div>
+    </div>
+  </div>
+}
+\end{lstlisting}
+
+Die \texttt{track}-Funktion verbessert die Performance: Angular aktualisiert nur geänderte Elemente, anstatt die gesamte Liste neu zu erstellen.
+
+\section{Dateien nacheinander verarbeiten}
+
+Die Anwendung verarbeitet mehrere Dateien nacheinander (sequenziell). Dafür werden Variablen wie \texttt{isProcessingAll}, \texttt{currentProcessingIndex} und \texttt{processedCount} verwendet.
+
+\subsection{Start und Verarbeitung}
+
+Die Methode \texttt{uploadAllFiles} startet die Verarbeitung aller ausgewählten Dateien:
+
+\begin{lstlisting}[language={[Sharp]C},caption={Upload-Initialisierung},label={lst:upload-all}]
+private uploadAllFiles(): void {
+  this.isProcessingAll = true;
+  this.currentProcessingIndex = 0;
+  this.processedCount = 0;
+  this.totalFiles = this.selectedFiles.length;
+  this.allResults = [];
+  
+  this.selectedFiles.forEach(f => f.status = 'pending');
+  this.processNextFile();
+}
+\end{lstlisting}
+
+Diese Methode setzt alle Zähler und Status zurück und startet dann die Verarbeitung der ersten Datei mit \texttt{processNextFile()}.
+
+Die Methode \texttt{processNextFile} verarbeitet die Dateien nacheinander:
+
+\begin{lstlisting}[language={[Sharp]C},caption={Rekursive Dateiverarbeitung},label={lst:process-next}]
+private processNextFile(): void {
+  if (this.currentProcessingIndex >= this.selectedFiles.length) {
+    this.isProcessingAll = false;
+    return;
+  }
+  
+  const currentFile = this.selectedFiles[this.currentProcessingIndex];
+  currentFile.status = 'processing';
+  
+  this.invoiceService.uploadInvoice(currentFile.file).subscribe({
+    next: (response) => {
+      currentFile.status = 'completed';
+      currentFile.result = response;
+      this.allResults.push(response);
+      this.processedCount++;
+      this.currentProcessingIndex++;
+      this.processNextFile();  // Rekursiver Aufruf
+    },
+    error: (error) => {
+      currentFile.status = 'error';
+      currentFile.errorMessage = error.error?.error || 'Fehler';
+      this.currentProcessingIndex++;
+      this.processNextFile();  // Weiter trotz Fehler
+    }
+  });
+}
+\end{lstlisting}
+
+Die Methode holt sich die aktuelle Datei aus dem Array, sendet sie ans Backend und wartet auf die Antwort. Bei Erfolg wird der Status auf \texttt{completed} gesetzt, bei Fehler auf \texttt{error}. In beiden Fällen wird der Index erhöht und die Methode ruft sich selbst auf, um die nächste Datei zu verarbeiten. Diese rekursive Logik (Methode ruft sich selbst auf) stellt sicher, dass die Dateien nacheinander und nicht gleichzeitig verarbeitet werden.
+
+\subsection{Fortschritt anzeigen und alle Downloads starten}
+
+Der Fortschritt wird basierend auf dem Status berechnet:
+
+\begin{lstlisting}[language={[Sharp]C},caption={Progress-Berechnung},label={lst:progress}]
+getProgressPercentage(fileItem: FileUploadItem): number {
+  switch (fileItem.status) {
+    case 'pending': return 0;
+    case 'processing': return 50;
+    case 'completed': return 100;
+    case 'error': return 0;
+  }
+}
+
+getProcessingProgress(): number {
+  return this.totalFiles > 0 
+    ? (this.processedCount / this.totalFiles) * 100 
+    : 0;
+}
+\end{lstlisting}
+
+Für den Download aller XML-Dateien wird \texttt{setTimeout} verwendet:
+
+\begin{lstlisting}[language={[Sharp]C},caption={Batch-Download mit Staggering},label={lst:batch-download}]
+downloadAllXml(): void {
+  this.allResults.forEach((result, index) => {
+    let xmlContent = result.zugferdXml || result.workflow?.ebInterfaceXml;
+    let invoiceNumber = `invoice_${result.invoice?.id || Date.now()}`;
+    
+    setTimeout(() => {
+      this.invoiceService.generateXmlDownload(
+        xmlContent, invoiceNumber, this.selectedFormat!
+      );
+    }, index * 500);  // 500ms Verzögerung zwischen Downloads
+  });
+}
+\end{lstlisting}
+
+Die 500-Millisekunden-Verzögerung zwischen den Downloads verhindert, dass der Browser blockiert wird. Browser erlauben normalerweise nur 6 gleichzeitige Downloads pro Website, und die Verzögerung stellt sicher, dass dieses Limit nicht überschritten wird.
+
+Die XML-Download-Funktion erstellt einen Download-Link:
+
+\begin{lstlisting}[language={[Sharp]C},caption={XML-Download mit Blob-API},label={lst:xml-download}]
+generateXmlDownload(xmlContent: string, invoiceNumber: string,
+                    format: 'ebInterface' | 'ZUGFeRD'): void {
+  const blob = new Blob([xmlContent], { type: 'application/xml' });
+  const url = window.URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `${invoiceNumber}_${format}.xml`;
+  
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  window.URL.revokeObjectURL(url);
+}
+\end{lstlisting}
+
+Diese Methode erstellt einen temporären Download-Link, klickt ihn automatisch an und entfernt ihn wieder. Die Datei wird direkt im Browser erstellt, ohne dass der Server nochmal kontaktiert werden muss.
+
+Die Anwendung hat einen zweistufigen Ablauf: Zuerst wird das Format gewählt (ebInterface oder ZUGFeRD), dann erscheint der Upload-Bereich. Bei Formatwechsel werden vorherige Dateien gelöscht.
+
+\subsection{Gesamtablauf}
+
+Der Upload-Workflow hat folgende Schritte:
+
+\begin{enumerate}
+\item \textbf{Format-Auswahl:} Benutzer wählt ebInterface oder ZUGFeRD
+\item \textbf{Datei-Selektion:} Drag-and-Drop oder Click-to-Upload
+\item \textbf{Validierung:} MIME-Type-Prüfung und Größenlimit
+\item \textbf{Vorschau-Generierung:} FileReader API lädt Preview-Daten
+\item \textbf{Sequenzielle Verarbeitung:} Uploads nacheinander an Backend
+\item \textbf{Status-Tracking:} Echtzeit-Updates in UI (pending → processing → completed/error)
+\item \textbf{Ergebnis-Download:} XML-Dateien einzeln oder als Batch
+\end{enumerate}
+
+Jeder Schritt hat eigene Fehlerbehandlung und zeigt dem Benutzer Feedback. Die Aufteilung in verschiedene Bereiche (Datei-Handling, Backend-Kommunikation, UI-Anzeige) macht den Code wartbar und erweiterbar.
+
+\subsection{Kommunikation mit dem Backend}
+
+Die Kommunikation mit dem Backend erfolgt über den \texttt{InvoiceService}:
+
+\begin{lstlisting}[language={[Sharp]C},caption={InvoiceService Upload-Methoden},label={lst:service-methods}]
+@Injectable({ providedIn: 'root' })
+export class InvoiceService {
+  private apiUrl = environment.apiUrl;
+
+  constructor(private http: HttpClient) {}
+
+  uploadInvoice(file: File): Observable<any> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.http.post(`${this.apiUrl}/Processing/upload`, formData);
+  }
+
+  uploadInvoiceForZugferd(file: File): Observable<any> {
+    const formData = new FormData();
+    formData.append('file', file);
+    return this.http.post(`${this.apiUrl}/zugferd/upload-pdf`, formData, {
+      responseType: 'text'
+    }).pipe(
+      map((xmlResponse: string) => ({ zugferdXml: xmlResponse }))
+    );
+  }
+}
+\end{lstlisting}
+
+Die \texttt{FormData}-API ermöglicht das Hochladen von Dateien per HTTP POST. Der \texttt{Observable}-Ansatz von Angular's \texttt{HttpClient} ermöglicht asynchrone Verarbeitung mit RxJS-Operatoren wie \texttt{map}, \texttt{catchError} und \texttt{retry}.
+
+\subsection{Fehler behandeln}
+
+Die Fehlerbehandlung erfolgt auf mehreren Ebenen:
+
+\begin{lstlisting}[language={[Sharp]C},caption={Mehrstufige Fehlerbehandlung},label={lst:error-handling}]
+this.invoiceService.uploadInvoice(currentFile.file).subscribe({
+  next: (response) => {
+    currentFile.status = 'completed';
+    currentFile.result = response;
+    this.processedCount++;
+    this.currentProcessingIndex++;
+    this.processNextFile();
+  },
+  error: (error) => {
+    console.error('Upload fehlgeschlagen:', error);
+    currentFile.status = 'error';
+    currentFile.errorMessage = error.error?.error || 
+                               error.message || 
+                               'Unbekannter Fehler';
+    this.currentProcessingIndex++;
+    this.processNextFile();  // Continue-on-error Pattern
+  }
+});
+\end{lstlisting}
+
+Das Continue-on-error Pattern bedeutet: Wenn eine Datei fehlschlägt, wird trotzdem mit der nächsten Datei weitergemacht. Die Fehlermeldung wird aus der Server-Antwort ausgelesen oder durch einen Standard-Text ersetzt.
+
+Fehler werden in der Oberfläche mit Bootstrap Alerts angezeigt:
+
+\begin{lstlisting}[language=HTML,caption={Error-Display im Template},label={lst:error-display}]
+@if (fileItem.status === 'error' && fileItem.errorMessage) {
+  <div class="alert alert-danger alert-dismissible">
+    <i class="bi bi-exclamation-triangle me-2"></i>
+    {{ fileItem.errorMessage }}
+  </div>
+}
+\end{lstlisting}

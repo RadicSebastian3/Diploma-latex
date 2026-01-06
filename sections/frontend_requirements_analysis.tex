@@ -1,0 +1,147 @@
+\setauthor{Luis Schörgendorfer}
+\chapter{Anforderungsanalyse Frontend}
+\label{chap:frontend_requirements}
+
+Die Entwicklung einer benutzerfreundlichen Weboberfläche ist ein zentraler Erfolgsfaktor für die Akzeptanz des \textit{SmartBillConverter}. Während das Backend die komplexen Aufgaben der Dokumentenverarbeitung und Format-Konvertierung übernimmt, muss das Frontend eine intuitive Schnittstelle bieten. Dieses Kapitel dokumentiert die systematische Analyse der Frontend-Anforderungen, die Modellierung der Datenstrukturen und die Benutzerinteraktionen.
+
+\section{Definition der Systemanforderungen (Frontend)}
+\label{sec:frontend_system_requirements}
+
+\subsection{Funktionale Anforderungen}
+Die funktionalen Anforderungen an das Frontend definieren die Kernfunktionen des Systems:
+
+\begin{itemize}
+    \item \textbf{Dokumenten-Upload}: Unterstützt PDF-Dateien und Bildformate (PNG, JPEG, BMP, TIFF) per Drag-and-Drop oder Dateiauswahl. Mehrere Dateien können gleichzeitig hochgeladen werden (bis zu 10 MB pro Datei). Der Upload-Fortschritt wird angezeigt. Falsche Dateiformate werden mit einer Fehlermeldung abgelehnt. Nutzt HTML5 File API und FormData.
+    
+    \item \textbf{Format-Auswahl}: Auswahl zwischen ebInterface 6.1 (Österreich) und ZUGFeRD 2.3 (Deutschland) über Radio-Buttons. Tooltips erklären die Unterschiede zwischen den Formaten.
+    
+    \item \textbf{Fortschrittsanzeige}: Zeigt den Verarbeitungsstatus mit Progress Bar (0-100\%) und farbigen Status-Badges (wartend, verarbeitend, abgeschlossen, fehlgeschlagen). Grün bedeutet Erfolg, rot bedeutet Fehler, gelb bedeutet Warnung. Bei langen Verarbeitungen wird ein Spinner angezeigt.
+    
+    \item \textbf{Dokumenten-Vorschau}: PDFs werden mit ng2-pdf-viewer angezeigt (mit Zoom und Seitennavigation). Bilder werden automatisch skaliert. Das generierte XML wird mit Syntax-Highlighting angezeigt.
+    
+    \item \textbf{Download-Funktionalität}: XML-Dateien können einzeln oder als Batch heruntergeladen werden. Dateinamen folgen dem Schema \texttt{invoice\_12345\_ebInterface.xml}. Der Download nutzt Blob-URLs. Mehrere Dateien werden als ZIP-Datei gebündelt.
+    
+    \item \textbf{Fehlerbehandlung}: Dateien werden vor dem Upload validiert (Größe, Format). Bei Fehlern werden verständliche Fehlermeldungen angezeigt. Netzwerkfehler können mit einem Retry-Button wiederholt werden.
+\end{itemize}
+
+\subsection{Nicht-funktionale Anforderungen}
+Diese Anforderungen definieren die Qualität und Benutzerfreundlichkeit der Anwendung:
+
+\begin{itemize}
+    \item \textbf{Benutzerfreundlichkeit}: Die Bedienung soll selbsterklärend sein. Ein neuer Benutzer soll den Upload-Workflow in unter 60 Sekunden verstehen. Fehleingaben werden durch Validierung verhindert.\footnote{Vgl. Nielsen Norman Group: \textit{Drag and Drop: How to Design for Ease of Use}, \url{https://www.nngroup.com/articles/drag-drop/}, letzter Zugriff am 19.12.2025}
+    \item \textbf{Geschwindigkeit}: Die Seite soll in unter 2 Sekunden laden. Benutzerinteraktionen sollen unter 100ms reagieren.
+    \item \textbf{Geräteunterstützung}: Die Anwendung ist primär für Desktop optimiert, funktioniert aber auch auf Tablets und Smartphones.
+    \item \textbf{Browser-Unterstützung}: Die Anwendung funktioniert in Chrome, Firefox, Safari und Edge (aktuelle Versionen).\footnote{Vgl. W3C: \textit{Web Content Accessibility Guidelines (WCAG) 2.1}, \url{https://www.w3.org/TR/WCAG21/}, letzter Zugriff am 19.12.2025}
+\end{itemize}
+
+\section{Entity-Relationship-Diagramm (Datenmodell-Sicht)}
+\label{sec:frontend_erd}
+
+Das Entity-Relationship-Diagramm modelliert die zentrale Datenstruktur des Systems. Die \texttt{Invoice}-Entität repräsentiert eine verarbeitete Rechnungsdatei mit allen extrahierten Kerninformationen:
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.5\textwidth]{pics/erd.png}
+\caption{Entity-Relationship-Diagramm der Invoice-Entität}
+\label{fig:erd_diagram}
+\end{figure}
+
+\subsection{Detaillierte Attributbeschreibung}
+Das Datenmodell folgt den gesetzlichen Anforderungen des österreichischen UStG. Die einzelnen Attribute der \texttt{Invoice}-Entität haben folgende Bedeutung:
+
+\begin{itemize}
+    \item \textbf{ID} (\texttt{int}, Primary Key): Eindeutige ID für jede Rechnung in der Datenbank. Wird automatisch hochgezählt.
+    
+    \item \textbf{Year} (\texttt{smallint}): Rechnungsjahr, extrahiert aus dem Rechnungsdatum. Wird für Jahresabfragen und Archivierung verwendet.
+    
+    \item \textbf{InvoiceNumber} (\texttt{varchar(20)}): Eindeutige Rechnungsnummer des Rechnungsstellers. Gemäß § 11 Abs. 1 Z 2 UStG muss jede Rechnung eine fortlaufende Nummer enthalten. Unterstützt Formate wie \texttt{RE-2025-00142} oder \texttt{INV/2025/0001}.
+    
+    \item \textbf{InvoiceAmount} (\texttt{decimal(14,2)}): Bruttorechnungsbetrag inklusive Umsatzsteuer. Mit 14 Stellen und 2 Nachkommastellen können Beträge bis zu 999.999.999.999,99 EUR gespeichert werden.
+    
+    \item \textbf{InvoiceDate} (\texttt{date}): Rechnungsdatum, an dem die Rechnung ausgestellt wurde. Wird für die Fälligkeitsberechnung und die Zuordnung zu Steuerperioden verwendet.
+    
+    \item \textbf{DueDate} (\texttt{date}): Fälligkeitsdatum, bis zu dem die Zahlung erwartet wird. Wird aus dem Zahlungsziel berechnet (z.B. \glqq Zahlbar innerhalb 14 Tagen\grqq). Wichtig für Mahnungen und Liquiditätsplanung.
+    
+    \item \textbf{VatNumber} (\texttt{varchar(20)}): Umsatzsteuer-Identifikationsnummer (UID) des Rechnungsstellers im Format \texttt{ATU12345678}. Muss bei EU-Lieferungen angegeben werden (§ 11 Abs. 1 Z 5 UStG).
+    
+    \item \textbf{IBAN} (\texttt{varchar(34)}): Bankkontonummer für Überweisungen. Maximal 34 Zeichen nach IBAN-Standard. Beispiel: \texttt{AT611904300234573201}.
+    
+    \item \textbf{Version} (\texttt{int}): Versionsnummer der Rechnung für Änderungsnachverfolgung. Beginnt bei 1 und wird bei jeder Korrektur erhöht.
+    
+    \item \textbf{InvoiceType} (\texttt{varchar(10)}): Rechnungstyp, z.B. \texttt{INVOICE} (Rechnung), \texttt{CREDIT} (Gutschrift) oder \texttt{ADVANCE} (Anzahlungsrechnung). Wichtig für die Buchhaltung.
+    
+    \item \textbf{PaymentReference} (\texttt{varchar(35)}): Zahlungsreferenz für die Zuordnung von Zahlungseingängen. Beispiel: \texttt{RF18539007547034}.
+    
+    \item \textbf{DiscountAmount} (\texttt{decimal(14,2)}): Skontobetrag bei vorzeitiger Zahlung. Oft 2-3\% bei Zahlung innerhalb von 7-10 Tagen.
+\end{itemize}
+
+Diese Datenstruktur bildet die Grundlage für die persistente Speicherung aller verarbeiteten Rechnungen und erlaubt schnelle Abfragen, Reporting und Archivierung.
+
+Im Frontend wird ein TypeScript-Interface verwendet, das die Backend-Entität widerspiegelt:
+
+\begin{lstlisting}[language=TypeScript, caption={TypeScript Invoice-Interface}, label={lst:invoice_interface}]
+export interface Invoice {
+    id: number;
+    invoiceNumber: string;
+    invoiceAmount: number;
+    invoiceDate: string;
+    dueDate: string;
+    vatNumber: string;
+    iban: string;
+    
+    // UI-spezifische Felder
+    ebInterfaceXml?: string;
+    isValidXml?: boolean;
+}
+\end{lstlisting}
+
+\section{Use-Case-Diagramm (Benutzerinteraktionen)}
+\label{sec:frontend_use_cases}
+
+Use-Case-Diagramme visualisieren die Interaktionen zwischen Benutzern und dem System. Das folgende Diagramm zeigt die Hauptanwendungsfälle:
+
+\begin{figure}[htbp]
+\centering
+\includegraphics[width=0.8\textwidth]{pics/use-case-diagram.png}
+\caption{Use-Case-Diagramm des SmartBillConverter}
+\label{fig:use_case_diagram}
+\end{figure}
+
+\subsection{Beschreibung der Use-Cases}
+Die Hauptanwendungsfälle werden im Folgenden detailliert beschrieben:
+
+\textbf{UC1: Import Invoice} -- Der primäre Use-Case ermöglicht das Hochladen von Rechnungsdokumenten. Der Benutzer wählt zwischen zwei Importvarianten:
+
+\begin{itemize}
+    \item \textbf{UC1.1: via PDF} (\texttt{<<extend>>}): Import einer digitalisierten PDF-Rechnung. Dies ist der Standardfall für elektronisch erstellte Rechnungen. Das System extrahiert Text mittels PDF-Parser (PDF.js) ohne OCR-Verarbeitung.
+    
+    \item \textbf{UC1.2: via Screenshot} (\texttt{<<extend>>}): Import eines gescannten Bildes (PNG, JPEG, BMP, TIFF). Für diese Variante ist eine OCR-Verarbeitung (Tesseract) notwendig, um den Text aus dem Bild zu extrahieren.
+\end{itemize}
+
+\textbf{UC2: Extract Invoice Data} (\texttt{<<include>>}) -- Dieser Use-Case ist in UC1 eingebettet und wird automatisch nach dem Import ausgeführt. Die Extraktion erfolgt in mehreren Schritten: (1) Text-Extraktion (PDF-Parser oder OCR), (2) Normalisierung durch LLM-basierte Analyse (Gemini/ChatGPT), (3) Extraktion strukturierter Daten (Rechnungsnummer, Betrag, Datum, etc.), (4) Validierung der extrahierten Daten gegen Geschäftsregeln.
+
+\textbf{UC3: Save Invoice Data} -- Nach erfolgreicher Extraktion werden die Rechnungsdaten in der PostgreSQL-Datenbank persistiert. Dieser Use-Case umfasst: (1) Validierung der Vollständigkeit aller Pflichtfelder, (2) Prüfung auf Duplikate anhand der Rechnungsnummer, (3) Speicherung der Invoice-Entität mit allen Attributen, (4) Rückgabe der generierten Datenbank-ID an das Frontend.
+
+\textbf{UC4: Export Electronic Invoice} -- Der finale Use-Case generiert die standardisierte elektronische Rechnung. Der Benutzer wählt das Zielformat:
+
+\begin{itemize}
+    \item \textbf{UC4.1: as ebInterface 6.1 (XML)} (\texttt{<<extend>>}): Export als reine XML-Datei nach österreichischem ebInterface-Standard. Die XML-Struktur folgt dem offiziellen XSD-Schema des Bundesrechenzentrums.
+    
+    \item \textbf{UC4.2: as ZUGFeRD (PDF with XML)} (\texttt{<<extend>>}): Export als hybrides PDF/A-3-Dokument mit eingebetteter XML-Datei nach ZUGFeRD 2.3-Standard. Das sichtbare PDF entspricht der Original-Rechnung, während die maschinenlesbare XML-Datei im PDF eingebettet ist.
+\end{itemize}
+
+Der gesamte Workflow ist auf Einfachheit und Benutzerfreundlichkeit optimiert: Format wählen $\rightarrow$ Datei hochladen $\rightarrow$ Automatische Verarbeitung abwarten $\rightarrow$ XML herunterladen. Die durchschnittliche Bearbeitungszeit beträgt 5-15 Sekunden pro Rechnung, abhängig von der Dokumentenkomplexität.
+
+\section{Systemarchitektur (Frontend-Sicht)}
+\label{sec:frontend_architecture}
+
+Die Systemarchitektur folgt einer klassischen Drei-Schichten-Architektur mit klarer Trennung der Verantwortlichkeiten:
+
+\begin{figure}[h!]
+\centering
+\includegraphics[width=\textwidth]{pics/system-architecture.png}
+\caption{Systemarchitektur des SmartBillConverter}
+\label{fig:system_architecture}
+\end{figure}
+
+Die Architektur besteht aus drei Schichten: (1) \textbf{Präsentationsschicht}: Angular-Webseite im Browser, (2) \textbf{Anwendungsschicht}: ASP.NET Core Web API mit Verarbeitungslogik, (3) \textbf{Datenschicht}: PostgreSQL-Datenbank. Der \texttt{InvoiceService} im Frontend verwaltet alle HTTP-Anfragen und nutzt RxJS Observables für asynchrone Datenverarbeitung.\footnote{Vgl. Angular Documentation: \textit{Observables in Angular}, \url{https://angular.io/guide/observables-in-angular}, letzter Zugriff am 19.12.2025} Der Ablauf: Benutzer lädt Datei hoch $\rightarrow$ Frontend prüft und sendet an Backend $\rightarrow$ Backend extrahiert Text (PDF-Parser oder OCR) und normalisiert mit KI $\rightarrow$ XML wird erstellt und zurückgesendet $\rightarrow$ Nutzer lädt XML herunter.
