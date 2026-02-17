@@ -1,0 +1,617 @@
+\setauthor{Sebastian Radic}
+\chapter{PDF-Textextraktion und OCR-Pipeline}
+\label{chap:pdf_ocr_pipeline}
+
+Die Verarbeitung von Rechnungsdokumenten beginnt mit der Extraktion des Textinhalts. Rechnungen können in zwei fundamentalen Formaten vorliegen: als digitales PDF mit eingebettetem Text oder als gescannte Bilddatei (Rastergrafik). Diese beiden Fälle erfordern völlig unterschiedliche technische Ansätze. Dieses Kapitel beschreibt die Implementierung beider Extraktionspipelines im \textit{SmartBillConverter}.
+
+\section{PDF-Textextraktion mit PdfPig}
+\label{sec:pdf_extraction_implementation}
+
+Für die Verarbeitung digitaler PDFs wird die Open-Source-Bibliothek \textit{PdfPig} eingesetzt. Sie ist eine C\#-Portierung des bewährten Java-Tools \textit{Apache PDFBox} und bietet direkten Zugriff auf die PDF-Objektstruktur.
+
+\subsection{PdfExtractionService: Architektur und Interface}
+\label{subsec:pdf_service_architecture}
+
+Der Service folgt dem Interface-Segregation-Prinzip mit einer minimalen Schnittstelle:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={IPdfExtractionService Interface}, label={lst:pdf_interface}]
+public interface IPdfExtractionService
+{
+    Task<string> ExtractTextFromPdfAsync(Stream pdfStream);
+}
+\end{lstlisting}
+
+Das Interface akzeptiert einen \texttt{Stream} statt eines Dateipfads. Dies ermöglicht Flexibilität: Der Stream kann aus einer hochgeladenen Datei (\texttt{IFormFile}), einem Netzwerk-Stream oder einem In-Memory-Buffer kommen. Die Methode ist async, da I/O-Operationen (Stream-Lesen) Non-Blocking durchgeführt werden sollen.
+
+Die Implementierung injiziert \texttt{ILogger} für Observability:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={PdfExtractionService Constructor}, label={lst:pdf_constructor}]
+public class PdfExtractionService : IPdfExtractionService
+{
+    private readonly ILogger<PdfExtractionService> _logger;
+
+    public PdfExtractionService(ILogger<PdfExtractionService> logger)
+    {
+        _logger = logger;
+    }
+}
+\end{lstlisting}
+
+\subsection{Stream-Handling und Document-Opening}
+Die Hauptmethode \texttt{ExtractTextFromPdfAsync} beginnt mit robustem Stream-Handling:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={PDF Stream-Verarbeitung}, label={lst:pdf_stream}]
+public async Task<string> ExtractTextFromPdfAsync(Stream pdfStream)
+{
+    try
+    {
+        // Stream Position zuruecksetzen (wichtig falls bereits gelesen)
+        if (pdfStream.CanSeek)
+        {
+            pdfStream.Position = 0;
+        }
+
+        var extractedText = new StringBuilder();
+        
+        using (var document = PdfDocument.Open(pdfStream))
+        {
+            _logger.LogInformation("PDF geoeffnet - {PageCount} Seiten gefunden", 
+                document.NumberOfPages);
+
+            // Seiten-Iteration folgt...
+        }
+
+        return await Task.FromResult(extractedText.ToString());
+    }
+    catch (Exception ex)
+    {
+        _logger.LogError(ex, "Kritischer Fehler bei der PDF-Extraktion");
+        return await Task.FromResult(GenerateFallbackDemoText());
+    }
+}
+\end{lstlisting}
+
+Das \texttt{Position}-Reset ist kritisch: Falls der Controller den Stream bereits zum Validieren gelesen hat, steht der Positionszeiger am Ende. Ohne Reset würde PdfPig ein leeres Dokument sehen. \texttt{CanSeek} prüft, ob der Stream seekable ist (NetworkStreams sind oft non-seekable).
+
+Die \texttt{using}-Anweisung stellt sicher, dass das \texttt{PdfDocument} disposed wird und Ressourcen freigegeben werden. PdfPig lädt das gesamte PDF in den Speicher, daher ist die 10MB-Begrenzung im Controller wichtig.\footnote{Vgl. UglyToad: \textit{PdfPig Documentation - Opening Documents}, \url{https://github.com/UglyToad/PdfPig/wiki/Opening-documents}, letzter Zugriff am 06.01.2026}
+
+\subsection{Page-by-Page-Extraktion mit Error-Recovery}
+PDFs können korrumpierte Seiten enthalten. Die Implementierung isoliert Fehler pro Seite:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Robuste Seiten-Iteration}, label={lst:pdf_page_iteration}]
+for (int pageNumber = 1; pageNumber <= document.NumberOfPages; pageNumber++)
+{
+    extractedText.AppendLine($"--- Seite {pageNumber} ---");
+    
+    try
+    {
+        var page = document.GetPage(pageNumber);
+        var pageText = ExtractTextFromPage(page);
+        
+        if (!string.IsNullOrWhiteSpace(pageText))
+        {
+            extractedText.AppendLine(pageText);
+            _logger.LogDebug("Seite {PageNumber}: {CharCount} Zeichen extrahiert", 
+                pageNumber, pageText.Length);
+        }
+        else
+        {
+            extractedText.AppendLine("[Keine lesbaren Textinhalte auf dieser Seite gefunden]");
+            _logger.LogWarning("Seite {PageNumber}: Kein Text gefunden", pageNumber);
+        }
+    }
+    catch (Exception pageEx)
+    {
+        _logger.LogError(pageEx, "Fehler beim Extrahieren von Seite {PageNumber}", 
+            pageNumber);
+        extractedText.AppendLine($"[Fehler beim Lesen von Seite {pageNumber}: {pageEx.Message}]");
+    }
+    
+    extractedText.AppendLine(); // Leerzeile zwischen Seiten
+}
+\end{lstlisting}
+
+Jede Seite hat einen eigenen Try-Catch-Block. Wenn Seite 2 defekt ist, werden Seite 1 und 3 trotzdem extrahiert. Die Fehlermeldung wird in den Text eingefügt, sodass die KI im nächsten Schritt "sieht", dass Seite 2 fehlt. Der Trennlinie-Marker \texttt{--- Seite X ---} hilft der KI, mehrseitige Dokumente zu verstehen.
+
+\subsection{Word-Level-Extraktion mit geometrischer Sortierung}
+Die \texttt{ExtractTextFromPage}-Methode extrahiert Text auf Wort-Ebene und rekonstruiert die Lesereihenfolge:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Geometrische Wort-Sortierung}, label={lst:word_extraction}]
+private string ExtractTextFromPage(Page page)
+{
+    var words = page.GetWords();
+    if (words == null || !words.Any())
+    {
+        return "";
+    }
+
+    // Sortiere Woerter nach Position (oben nach unten, links nach rechts)
+    var sortedWords = words
+        .OrderBy(w => Math.Round(w.BoundingBox.Bottom, 1)) // Y-Position
+        .ThenBy(w => Math.Round(w.BoundingBox.Left, 1))    // X-Position
+        .ToList();
+
+    var extractedText = new StringBuilder();
+    var currentLine = new StringBuilder();
+    double? currentLineY = null;
+    const double lineHeightTolerance = 5.0;
+
+    foreach (var word in sortedWords)
+    {
+        var wordY = Math.Round(word.BoundingBox.Bottom, 1);
+        
+        // Pruefen ob neue Zeile
+        if (currentLineY.HasValue && 
+            Math.Abs(wordY - currentLineY.Value) > lineHeightTolerance)
+        {
+            if (currentLine.Length > 0)
+            {
+                extractedText.AppendLine(currentLine.ToString().Trim());
+                currentLine.Clear();
+            }
+        }
+        
+        if (currentLine.Length > 0)
+        {
+            currentLine.Append(" ");
+        }
+        currentLine.Append(word.Text);
+        currentLineY = wordY;
+    }
+
+    // Letzte Zeile hinzufuegen
+    if (currentLine.Length > 0)
+    {
+        extractedText.AppendLine(currentLine.ToString().Trim());
+    }
+
+    return CleanExtractedText(extractedText.ToString().Trim());
+}
+\end{lstlisting}
+
+Die Sortierung erfolgt zuerst nach Y-Koordinate (vertikal), dann nach X-Koordinate (horizontal). \texttt{BoundingBox.Bottom} ist die untere Kante des Wortes in PDF-Koordinaten (Ursprung unten links). \texttt{Math.Round} auf eine Nachkommastelle verhindert, dass Micro-Unterschiede durch Kerning als neue Zeile interpretiert werden.
+
+Die \texttt{lineHeightTolerance} von 5 Punkten (ca. 1.8mm) toleriert leichte vertikale Verschiebungen innerhalb einer Zeile (z.B. hochgestellte Zahlen). Bei größeren Abweichungen wird eine neue Zeile angenommen. Dieses Verfahren funktioniert gut für einspaltige Dokumente, kann aber bei zweispaltigen Layouts versagen (beide Spalten werden vermischt).\footnote{Vgl. PDF Reference 1.7: \textit{Coordinate Systems}, Adobe Systems, 2006, S. 117-120}
+
+\subsection{Text-Cleaning und Normalisierung}
+Der extrahierte Rohtext enthält oft Artefakte (mehrfache Leerzeichen, überflüssige Zeilenumbrüche):
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Text-Bereinigung mit Regex}, label={lst:text_cleaning}]
+private string CleanExtractedText(string text)
+{
+    if (string.IsNullOrEmpty(text))
+        return text;
+
+    try
+    {
+        // Mehrfache Leerzeichen durch einzelne ersetzen
+        text = System.Text.RegularExpressions.Regex.Replace(
+            text, @" +", " ");
+        
+        // Mehrfache Zeilenumbrueche durch doppelte ersetzen (max 2)
+        text = System.Text.RegularExpressions.Regex.Replace(
+            text, @"\n{3,}", "\n\n");
+        
+        // Leerzeichen am Anfang und Ende von Zeilen entfernen
+        var lines = text.Split('\n')
+            .Select(line => line.Trim())
+            .Where(line => !string.IsNullOrEmpty(line));
+        
+        return string.Join('\n', lines);
+    }
+    catch (Exception ex)
+    {
+        _logger.LogWarning(ex, "Fehler beim Bereinigen des extrahierten Textes");
+        return text; // Originaltext zurueckgeben bei Fehlern
+    }
+}
+\end{lstlisting}
+
+Der Regex \texttt{@" +"} matched ein oder mehr Leerzeichen und ersetzt sie durch ein einzelnes. Der Regex \texttt{@"\textbackslash n\{3,\}"} matched drei oder mehr Newlines und reduziert sie auf zwei. Die \texttt{Trim()}-Kette entfernt führende/trailing Whitespaces pro Zeile. Dies normalisiert den Text für die KI-Verarbeitung.
+
+\subsection{Fallback-Mechanismus für leere Extraktionen}
+Manche PDFs (z.B. gescannte PDFs ohne OCR-Layer) haben keinen extrahierbaren Text:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Empty-Text-Detection}, label={lst:fallback_check}]
+var result = extractedText.ToString();
+
+if (string.IsNullOrWhiteSpace(result) || 
+    result.Contains("[Keine lesbaren Textinhalte") ||
+    result.Replace("---", "").Replace("Seite", "").Trim().Length < 50)
+{
+    _logger.LogWarning("Wenig oder kein Text extrahiert, fuege Demo-Text als Fallback hinzu");
+    result += "\n\n" + GenerateFallbackDemoText();
+}
+\end{lstlisting}
+
+Die Heuristik prüft drei Bedingungen: (1) komplett leer, (2) enthält Error-Marker oder (3) weniger als 50 Zeichen nach Entfernung der Seiten-Header. In diesen Fällen wird ein Demo-Text angefügt. Dies ist für Development/Testing wichtig, da sonst die KI nichts zu verarbeiten hätte. In Produktion sollte hier stattdessen ein OCR-Fallback getriggert werden.
+
+\section{OCR-Pipeline mit Tesseract}
+\label{sec:ocr_implementation}
+
+Wenn PDFs keine extrahierbare Textebene haben oder Dokumente als Bilder vorliegen, kommt Optical Character Recognition (OCR) zum Einsatz. Das Projekt nutzt \textit{Tesseract}, eine der führenden Open-Source-OCR-Engines.
+
+\subsection{OcrExtractionService: Setup und Abhängigkeiten}
+\label{subsec:ocr_service_setup}
+
+Der \texttt{OcrExtractionService} benötigt Zugriff auf die Tesseract-Sprachmodelle (traineddata):
+
+\begin{lstlisting}[language={[Sharp]C}, caption={OcrExtractionService Constructor}, label={lst:ocr_constructor}]
+public class OcrExtractionService : IOcrExtractionService
+{
+    private readonly ILogger<OcrExtractionService> _logger;
+    private readonly string _tessDataPath;
+    private static readonly string[] SupportedFormats = 
+        { ".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".gif" };
+
+    public OcrExtractionService(
+        ILogger<OcrExtractionService> logger, 
+        IConfiguration configuration)
+    {
+        _logger = logger;
+        
+        // Tesseract data path aus Configuration
+        _tessDataPath = configuration.GetValue<string>("Tesseract:DataPath") 
+            ?? Path.Combine(Directory.GetCurrentDirectory(), "tessdata");
+        
+        // Pruefe ob tessdata Ordner existiert
+        if (!Directory.Exists(_tessDataPath))
+        {
+            _logger.LogWarning(
+                "Tesseract data path nicht gefunden: {TessDataPath}. " +
+                "Stelle sicher dass tessdata mit Language-Modellen vorhanden ist.", 
+                _tessDataPath);
+        }
+    }
+}
+\end{lstlisting}
+
+Der \texttt{tessDataPath} zeigt auf den Ordner mit \texttt{.traineddata}-Dateien (z.B. \texttt{deu.traineddata}, \texttt{eng.traineddata}). Diese Modelle sind groß (mehrere MB) und müssen separat heruntergeladen werden. Das Projekt enthält ein PowerShell-Script \texttt{download-tessdata.ps1} für den automatischen Download.\footnote{Vgl. Tesseract OCR: \textit{Data Files}, \url{https://github.com/tesseract-ocr/tessdata}, letzter Zugriff am 06.01.2026}
+
+Die \texttt{SupportedFormats}-Konstante definiert erlaubte Bildformate. Tesseract kann technisch auch TIFF-Multipage-Dokumente verarbeiten, was für mehrseitige Scans praktisch ist.
+
+\subsection{Image Format-Validierung}
+Vor der Verarbeitung wird das Bildformat geprüft:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Format-Validierung}, label={lst:image_validation}]
+public async Task<string> ExtractTextFromImageAsync(IFormFile imageFile)
+{
+    if (imageFile == null || imageFile.Length == 0)
+    {
+        throw new ArgumentException("Image file ist leer oder null");
+    }
+
+    if (!IsImageFormatSupported(imageFile.FileName))
+    {
+        throw new ArgumentException(
+            $"Unsupported image format: {Path.GetExtension(imageFile.FileName)}");
+    }
+
+    _logger.LogInformation(
+        "Starting OCR extraction from image: {FileName} ({FileSize} bytes)", 
+        imageFile.FileName, imageFile.Length);
+
+    using var stream = imageFile.OpenReadStream();
+    return await ExtractTextFromImageAsync(stream, imageFile.FileName);
+}
+
+public bool IsImageFormatSupported(string fileName)
+{
+    if (string.IsNullOrWhiteSpace(fileName))
+        return false;
+
+    var extension = Path.GetExtension(fileName).ToLowerInvariant();
+    return SupportedFormats.Contains(extension);
+}
+\end{lstlisting}
+
+Die Validierung erfolgt über die Dateiendung. Dies ist nicht sicher gegen Manipulation (Umbenennung von \texttt{.exe} zu \texttt{.png}), aber für den Anwendungsfall ausreichend. Eine robustere Lösung würde die Magic Bytes des File-Headers prüfen.
+
+\subsection{Tesseract Engine-Initialisierung}
+Die eigentliche OCR erfolgt über die Tesseract.NET-Bibliothek:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Tesseract Engine Setup}, label={lst:tesseract_init}]
+public async Task<string> ExtractTextFromImageAsync(
+    Stream imageStream, string fileName)
+{
+    try
+    {
+        _logger.LogInformation("Initializing Tesseract OCR engine...");
+
+        // Speichere das Image temporaer
+        var tempImagePath = Path.GetTempFileName() + Path.GetExtension(fileName);
+        
+        using (var fileStream = new FileStream(tempImagePath, FileMode.Create))
+        {
+            await imageStream.CopyToAsync(fileStream);
+        }
+
+        string extractedText;
+
+        try
+        {
+            // Tesseract OCR Engine initialisieren
+            using var engine = new TesseractEngine(
+                _tessDataPath, "deu+eng", EngineMode.Default);
+            
+            // OCR-Konfiguration fuer bessere Genauigkeit
+            engine.SetVariable("tessedit_char_whitelist", 
+                "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz" +
+                "aeoeuaeoeueAeOeUess.,:-+/()euro$£¥ \n\r\t");
+            engine.SetVariable("preserve_interword_spaces", "1");
+            
+            // ... Verarbeitung folgt
+        }
+        finally
+        {
+            if (File.Exists(tempImagePath))
+            {
+                File.Delete(tempImagePath);
+            }
+        }
+    }
+    catch (Exception ex)
+    {
+        _logger.LogError(ex, "Fehler beim OCR-Text-Extraction");
+        throw new InvalidOperationException(
+            $"OCR extraction failed: {ex.Message}", ex);
+    }
+}
+\end{lstlisting}
+
+Tesseract.NET benötigt einen Dateipfad, daher muss der Stream in eine temporäre Datei geschrieben werden. \texttt{Path.GetTempFileName()} erstellt eine eindeutige Temp-Datei im System-Temp-Ordner. Der \texttt{finally}-Block stellt sicher, dass diese Datei gelöscht wird (Cleanup).
+
+Die Engine-Parameter:
+\begin{itemize}
+    \item \texttt{deu+eng}: Nutze deutsche und englische Sprachmodelle parallel. Dies verbessert die Erkennung bei gemischten Texten.
+    \item \texttt{EngineMode.Default}: Nutzt LSTM-basiertes neuronales Netz (ab Tesseract 4.0). Alternativen wären \texttt{Legacy} (alte Methode) oder \texttt{TesseractAndLstm} (Hybrid).
+    \item \texttt{tessedit\_char\_whitelist}: Limitiert erkannte Zeichen auf relevante (Zahlen, Buchstaben, Währungen). Dies verhindert, dass Artefakte als exotische Unicode-Zeichen interpretiert werden.
+    \item \texttt{preserve\_interword\_spaces}: Behält Mehrfach-Leerzeichen bei (wichtig für Tabellen-Alignment).
+\end{itemize}
+
+\subsection{Image-Processing und Confidence-Scoring}
+Das Bild wird mit der \texttt{Pix}-Klasse (Teil von Tesseract) geladen:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={OCR-Processing mit Confidence}, label={lst:ocr_processing}]
+_logger.LogInformation("Processing image with Tesseract OCR...");
+
+using var img = Pix.LoadFromFile(tempImagePath);
+using var page = engine.Process(img);
+
+extractedText = page.GetText();
+var confidence = page.GetMeanConfidence();
+
+_logger.LogInformation(
+    "OCR completed! Confidence: {Confidence:F2}%, Extracted {CharCount} characters", 
+    confidence * 100, extractedText?.Length ?? 0);
+
+if (!string.IsNullOrWhiteSpace(extractedText))
+{
+    var preview = extractedText.Length > 200 
+        ? extractedText.Substring(0, 200) + "..." 
+        : extractedText;
+    _logger.LogDebug("OCR Text Preview: {TextPreview}", 
+        preview.Replace("\n", " "));
+}
+else
+{
+    _logger.LogWarning("No text extracted - OCR returned empty result");
+}
+\end{lstlisting}
+
+\texttt{Pix} ist das interne Bildformat von Tesseract (aus der Leptonica-Bibliothek). \texttt{LoadFromFile} lädt das Bild und führt automatisch Preprocessing durch (z.B. Binarisierung, wenn ein Graustufen-Bild übergeben wird).
+
+\texttt{GetMeanConfidence()} liefert einen Wert zwischen 0.0 und 1.0, der angibt, wie sicher Tesseract bei der Erkennung ist. Werte unter 0.5 (50\%) deuten auf schlechte Bildqualität oder ein Layout hin, das Tesseract nicht versteht. In Production sollte bei niedriger Confidence eine Warnung an den User ausgegeben werden.\footnote{Vgl. Tesseract Documentation: \textit{Improving Quality}, \url{https://tesseract-ocr.github.io/tessdoc/ImproveQuality.html}, letzter Zugriff am 06.01.2026}
+
+\subsection{Tesseract-Optimierung: Preprocessing und Deskewing}
+Die Erkennungsqualität hängt stark von der Bildqualität ab. Folgende Preprocessing-Schritte sind in Production empfehlenswert (nicht im Projekt implementiert, aber dokumentiert für Erweiterungen):
+
+\subsubsection{Deskewing (Geradestellen)}
+Tesseract hat eingebautes Deskewing, aber bei starker Schräglage (>5°) versagt es. Man kann manuell deskew mit der Leptonica-API:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Deskewing-Beispiel (nicht implementiert)}, label={lst:deskewing}]
+using var img = Pix.LoadFromFile(imagePath);
+var angle = img.FindSkew();
+if (Math.Abs(angle) > 0.1)
+{
+    using var deskewed = img.Rotate(angle);
+    using var page = engine.Process(deskewed);
+    extractedText = page.GetText();
+}
+\end{lstlisting}
+
+\texttt{FindSkew()} berechnet den Rotationswinkel. \texttt{Rotate()} dreht das Bild entsprechend.
+
+\subsubsection{Binarisierung mit Otsu's Method}
+Für gescannte Dokumente mit ungleichmäßiger Beleuchtung hilft adaptive Binarisierung:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Adaptive Binarisierung (Konzept)}, label={lst:binarization}]
+using var img = Pix.LoadFromFile(imagePath);
+using var binary = img.BinarizeOtsuAdaptiveThreshold(
+    tileWidth: 300, tileHeight: 300, 
+    smoothing: 1, scoreFraction: 0.1f);
+using var page = engine.Process(binary);
+\end{lstlisting}
+
+Otsu's Method bestimmt automatisch einen optimalen Schwellwert pro Tile (Kachel). Dies funktioniert besser als globales Thresholding bei Schatten oder Farbstichen.
+
+\subsubsection{Noise-Removal}
+Punktrauschen (z.B. durch schlechte Scanner) kann durch Morphological Operations entfernt werden:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Noise-Removal (Konzept)}, label={lst:noise_removal}]
+using var img = Pix.LoadFromFile(imagePath);
+using var denoised = img.CloseBrick(3, 3); // Morphological closing
+using var page = engine.Process(denoised);
+\end{lstlisting}
+
+\texttt{CloseBrick} füllt kleine Lücken und entfernt isolierte Pixel. Die Parameter (3x3) sind die Kernel-Größe.
+
+\subsection{Error-Handling und Debugging}
+OCR ist fehleranfällig. Häufige Fehler:
+
+\begin{itemize}
+    \item \textbf{TessdataNotFoundException}: Sprachmodelle fehlen. Die Exception-Message zeigt den gesuchten Pfad.
+    \item \textbf{UnsupportedImageFormatException}: Das Bildformat wird von Leptonica nicht erkannt (z.B. beschädigte Datei).
+    \item \textbf{OutOfMemoryException}: Bei sehr großen Bildern (>20 Megapixel). Lösung: Downscaling auf 300 DPI.
+\end{itemize}
+
+Der Try-Catch-Block im Service fängt alle Exceptions und wrappt sie in eine \texttt{InvalidOperationException} mit aussagekräftiger Message. Dies verhindert, dass interne Implementierungsdetails (Tesseract-spezifische Exceptions) nach außen durchdringen.
+
+\subsection{Tesseract Sprachmodelle und Download-Automatisierung}
+Die Tesseract-Modelle sind nicht im NuGet-Package enthalten. Das Projekt enthält ein PowerShell-Script für den Download:
+
+\begin{lstlisting}[language=powershell, caption={download-tessdata.ps1 (Auszug)}, label={lst:tessdata_download}]
+# Tesseract Traineddata Download Script
+$tessDataPath = ".\tessdata"
+$baseUrl = "https://github.com/tesseract-ocr/tessdata/raw/main"
+
+if (-not (Test-Path $tessDataPath)) {
+    New-Item -ItemType Directory -Path $tessDataPath
+}
+
+# Download deu.traineddata (German)
+Write-Host "Downloading German language data..."
+Invoke-WebRequest -Uri "$baseUrl/deu.traineddata" `
+    -OutFile "$tessDataPath\deu.traineddata"
+
+# Download eng.traineddata (English)
+Write-Host "Downloading English language data..."
+Invoke-WebRequest -Uri "$baseUrl/eng.traineddata" `
+    -OutFile "$tessDataPath\eng.traineddata"
+
+Write-Host "Tessdata download completed."
+\end{lstlisting}
+
+Das Script prüft, ob der \texttt{tessdata}-Ordner existiert, erstellt ihn falls nicht und lädt die Modelle von GitHub. Die Modelle sind groß: \texttt{deu.traineddata} ist ca. 16 MB, \texttt{eng.traineddata} ca. 11 MB. Für asiatische Sprachen (z.B. \texttt{chi\_sim.traineddata}) sind die Modelle noch größer (50+ MB).
+
+\section{Pipeline-Integration: PDF vs. OCR Decision}
+\label{sec:pipeline_decision}
+
+Im \texttt{InvoiceService} wird entschieden, welche Extraktionsmethode verwendet wird:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Extraktion-Decision-Logic}, label={lst:extraction_decision}]
+public async Task<Invoice> ProcessInvoiceAsync(Stream pdfStream, string fileName)
+{
+    string extractedText;
+
+    if (fileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+    {
+        _logger.LogInformation("PDF-Datei erkannt, nutze PdfExtractionService");
+        extractedText = await _pdfService.ExtractTextFromPdfAsync(pdfStream);
+        
+        // Pruefe ob PDF-Extraktion erfolgreich war
+        if (string.IsNullOrWhiteSpace(extractedText) || extractedText.Length < 100)
+        {
+            _logger.LogWarning(
+                "PDF-Extraktion lieferte wenig Text, PDF ist vermutlich gescannt");
+            // Hier koennte OCR-Fallback getriggert werden
+        }
+    }
+    else
+    {
+        _logger.LogInformation("Bild-Datei erkannt, nutze OcrExtractionService");
+        extractedText = await _ocrService.ExtractTextFromImageAsync(
+            pdfStream, fileName);
+    }
+
+    // Weiter mit LLM-Konvertierung
+    var llmResponse = await _llmService.ConvertToXmlAsync(extractedText);
+    // ...
+}
+\end{lstlisting}
+
+Die Decision erfolgt rein auf Basis der Dateiendung. Eine robustere Implementierung würde die Magic Bytes prüfen (PDF beginnt mit \texttt{\%PDF-1.}). 
+
+Ein wichtiges Szenario ist das \textit{gescannte PDF}: Ein PDF, das nur ein eingescanntes Bild enthält, ohne OCR-Layer. Die PDF-Extraktion liefert hier nur leere Strings oder Metadaten. Die Heuristik \texttt{Length < 100} erkennt dies und könnte einen OCR-Fallback triggern. Die Implementierung dafür ist:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={OCR-Fallback fuer gescannte PDFs (Konzept)}, label={lst:ocr_fallback}]
+if (string.IsNullOrWhiteSpace(extractedText) || extractedText.Length < 100)
+{
+    _logger.LogWarning("PDF scheint gescannt zu sein, versuche OCR");
+    
+    // PDF in Bilder konvertieren (via iText7 oder PdfPig)
+    pdfStream.Position = 0;
+    var images = await ConvertPdfToImages(pdfStream);
+    
+    // OCR auf jedes Bild anwenden
+    var ocrTexts = new List<string>();
+    foreach (var image in images)
+    {
+        var pageText = await _ocrService.ExtractTextFromImageAsync(
+            image.Stream, $"page{image.PageNumber}.png");
+        ocrTexts.Add(pageText);
+    }
+    
+    extractedText = string.Join("\n--- Naechste Seite ---\n", ocrTexts);
+}
+\end{lstlisting}
+
+Die Methode \texttt{ConvertPdfToImages} würde jede PDF-Seite als Rastergrafik rendern (z.B. via \texttt{PdfPig.Rendering} oder \texttt{SkiaSharp}). Dies ist im Projekt nicht implementiert, aber für Production essenziell.
+
+\section{Performance-Optimierung und Caching}
+\label{sec:performance_optimization}
+
+\subsection{Stream-Reuse vermeiden}
+Ein häufiger Fehler ist, den gleichen Stream mehrfach zu verwenden:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Stream-Reuse-Problem}, label={lst:stream_reuse}]
+// FALSCH: Stream wird zweimal gelesen
+var text1 = await _pdfService.ExtractTextFromPdfAsync(stream);
+var text2 = await _pdfService.ExtractTextFromPdfAsync(stream); // Fehler!
+\end{lstlisting}
+
+Nach dem ersten Lesen steht der Stream-Positionszeiger am Ende. Der zweite Aufruf liest nichts. Lösungen:
+\begin{itemize}
+    \item \textbf{Stream-Reset}: \texttt{stream.Position = 0} (nur bei seekable Streams).
+    \item \textbf{MemoryStream}: Den Stream einmal in einen \texttt{MemoryStream} kopieren und diesen mehrfach verwenden.
+    \item \textbf{Caching}: Das extrahierte Ergebnis zwischenspeichern.
+\end{itemize}
+
+\subsection{Tesseract-Engine-Pooling}
+Die Initialisierung der \texttt{TesseractEngine} ist teuer (300-500ms). Bei vielen parallelen Requests würde jeder Request eine neue Engine erstellen. Eine Optimierung ist Engine-Pooling:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={TesseractEngine-Pool (Konzept)}, label={lst:engine_pool}]
+public class TesseractEnginePool
+{
+    private readonly ObjectPool<TesseractEngine> _pool;
+
+    public TesseractEnginePool(string tessDataPath, int poolSize = 4)
+    {
+        var policy = new DefaultPooledObjectPolicy<TesseractEngine>
+        {
+            CreateFunc = () => new TesseractEngine(tessDataPath, "deu+eng", 
+                EngineMode.Default),
+            ReturnFunc = engine => true
+        };
+        
+        _pool = new DefaultObjectPool<TesseractEngine>(policy, poolSize);
+    }
+
+    public TesseractEngine Get() => _pool.Get();
+    public void Return(TesseractEngine engine) => _pool.Return(engine);
+}
+\end{lstlisting}
+
+Der Pool hält 4 vorkonfigurierte Engines im RAM. Requests leihen sich eine Engine aus und geben sie zurück. Dies ist besonders wichtig bei hohem Durchsatz.\footnote{Vgl. Microsoft: \textit{Object Pooling in .NET}, \url{https://learn.microsoft.com/en-us/aspnet/core/performance/objectpool}, letzter Zugriff am 06.01.2026}
+
+\subsection{Parallel-Processing für Multi-Page-Documents}
+Mehrseitige Dokumente können parallelisiert werden:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Parallel Seiten-Extraktion (Konzept)}, label={lst:parallel_extraction}]
+var tasks = new List<Task<string>>();
+
+for (int pageNumber = 1; pageNumber <= document.NumberOfPages; pageNumber++)
+{
+    var pageNum = pageNumber; // Capture for closure
+    tasks.Add(Task.Run(() => 
+    {
+        var page = document.GetPage(pageNum);
+        return ExtractTextFromPage(page);
+    }));
+}
+
+var results = await Task.WhenAll(tasks);
+extractedText.Append(string.Join("\n\n", results));
+\end{lstlisting}
+
+\texttt{Task.Run} führt die Extraktion jeder Seite in einem Thread-Pool-Thread aus. \texttt{Task.WhenAll} wartet auf alle Abschlüsse. Dies kann bei 20-seitigen PDFs die Verarbeitungszeit halbieren. Achtung: \texttt{PdfDocument} muss thread-safe sein (PdfPig ist read-only thread-safe).

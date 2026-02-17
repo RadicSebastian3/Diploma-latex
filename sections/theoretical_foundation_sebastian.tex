@@ -1,48 +1,48 @@
 \chapter{E-Rechnungsstandards und Compliance}
 \label{chap:standards_compliance}
 
-Die Transformation von papierbasierten Geschäftsprozessen hin zu vollautomatisierten digitalen Workflows ist einer der wesentlichen Treiber der modernen IT-Ökonomie. Im Zentrum dieser Entwicklung steht die elektronische Rechnung (E-Rechnung). Anders als eine bloße PDF-Datei, die lediglich ein digitales Abbild eines Papierdokuments darstellt, definiert eine echte E-Rechnung strukturierte Daten, die von Maschinen ohne menschliches Zutun verarbeitet, geprüft und verbucht werden können. 
+Die Umstellung der Dokumente aus Papier auf digitale Dateien ist ein großer Bestandteil der modernen IT-Wirtschaft. Eine wichtige Rolle spielt dabei die elektronische Rechnung, auch bekannt als E-Rechnung. Im Vergleich zu einer simplen PDF-Datei ist sie nicht nur ein digitalisiertes Papierdokument sondern eine Datei mit strukturierten Daten. Diese Daten können ohne menschliches eingreifen automatisch verarbeitet, verbucht und geprüft werden.
 
-In diesem Kapitel werden die theoretischen Fundamente und spezifischen Standards analysiert, die für die Entwicklung des \textit{SmartBillConverter} maßgeblich sind. Der Fokus liegt dabei auf dem österreichischen Standard \textit{ebInterface} sowie dem deutsch-europäischen Hybridformat \textit{ZUGFeRD}, eingebettet in den Kontext der europäischen Norm EN 16931.
+In diesem Kapitel werden die theoretischen Grundlagen und spezifischen Standards behandelt, die für die Entwicklung des \textit{SmartBillConverter} wichtig sind. Der Fokus liegt dabei auf dem österreichischen Standard \textit{ebInterface} und dem deutsch-europäischen Hybridformat \textit{ZUGFeRD}, integriert in den Kontext der europäischen Norm EN 16931.
 
 \section{ebInterface 6.1 (Österreich)}
 \label{sec:ebinterface}
 
 \subsection{Zweck und Historie}
-ebInterface ist der nationale österreichische Standard für die elektronische Rechnungslegung. Er wurde von der AUSTRIAPRO, einer Initiative der Wirtschaftskammer Österreich (WKO), entwickelt, um den Datenaustausch zwischen Unternehmen sowie zwischen Unternehmen und der öffentlichen Verwaltung zu standardisieren. Die Entwicklung von ebInterface reicht bis in die frühen 2000er Jahre zurück und hat sich über mehrere Versionen (4.0, 5.0, 6.0) bis zur aktuellen Version 6.1 weiterentwickelt.
+EbInterface ist der offizielle österreichische Standard für die elektronische Rechnungsstellung. Die Entwicklung wurde von AUSTRIAPRO einer Initiative der Wirtschaftskammer Österreich WKO entworfen. Ziel war es den Datenaustausch zwischen Unternehmen sowie zwischen Unternehmen und Behörden einheitlich zu regeln. Bereits in den frühen 2000er Jahren begann die Entwicklung von ebInterface und wurde über mehrere Versionen hinweg fortgeführt von 4.0 über 5.0 und 6.0 bis zur aktuellen Version 6.1.
 
-Der primäre Zweck von ebInterface liegt in der Schaffung einer semantischen Interoperabilität. Während EDIFACT-Standards in großen Industriekonzernen dominierten, fehlte für KMUs (Kleine und mittlere Unternehmen) lange Zeit ein einfach zu implementierendes, XML-basiertes Format. ebInterface füllt diese Lücke. Seit 2014 ist die E-Rechnung an den Bund in Österreich verpflichtend, was die Verbreitung von ebInterface massiv gefördert hat. Rechnungen an den Bund müssen über das Unternehmensserviceportal (USP) eingebracht werden, welches ebInterface als primäres Format akzeptiert.\footnote{Vgl. AUSTRIAPRO: \textit{ebInterface - Der österreichische Standard für die elektronische Rechnung}, \url{https://www.ebinterface.at/}, letzter Zugriff am 19.12.2025}
+Das Anwendungsgebiet von ebInterface ist, dass verschiedene Computersysteme problemlos miteinander arbeiten können. Große Industrieunternehmen haben lange Zeit eigene komplexe Standards für elektronischen Datenaustausch verwendet, während es für kleine und mittlere Unternehmen kein unkompliziertes Format gab, das leicht genutzt werden konnte. Diese Lücke wird durch ebInterface geschlossen. Mit dem Jahr 2014 kam in Österreich die Verpflichtung, Rechnungen an den Staat elektronisch zu übermitteln, dadurch wurde die Nutzung von ebInterface deutlich gefördert. Über das Unternehmensserviceportal USP müssen Rechnungen an den Staat eingereicht werden und ebInterface wird als Standardformat akzeptiert.\footnote{Vgl. AUSTRIAPRO: \textit{ebInterface - Der österreichische Standard für die elektronische Rechnung}, \url{https://www.ebinterface.at/}, letzter Zugriff am 19.12.2025}
 
 \subsection{Kernelemente und Struktur}
-Technisch gesehen ist ebInterface eine reine XML-Struktur. Im Gegensatz zu ZUGFeRD gibt es keine eingebettete PDF-Datei; die XML-Datei \textit{ist} die Rechnung. Dies bedeutet, dass für die visuelle Darstellung (z.B. für die manuelle Prüfung durch einen Sachbearbeiter) ein Stylesheet (XSLT) oder ein Viewer notwendig ist.
+Technisch gesehen ist ebInterface eine Datei im XML-Format. Im Vergleich zu ZUGFeRD existiert keine integrierte PDF-Datei, sondern die XML-Datei selbst ist die Rechnung, daher wird zum Beispiel für eine manuelle Prüfung durch einen Mitarbeiter ein besonderes Anzeigeprogramm oder eine Formatvorlage (XSLT/Stylesheet) benötigt.
 
-Die Struktur eines ebInterface 6.1 Dokuments ist hierarchisch aufgebaut und umfasst folgende Hauptbereiche:
+Die Struktur einer ebInterface 6.1 Datei ist hierarchisch aufgebaut und besteht aus folgenden Hauptbereichen:
 \begin{itemize}
-    \item \textbf{Root-Element}: \texttt{<Invoice>} definiert die Grundeigenschaften wie Währung, Sprache und Dokumententitel.
-    \item \textbf{Header-Daten}: Hierzu zählen die eindeutige Rechnungsnummer (\texttt{InvoiceNumber}), das Rechnungsdatum (\texttt{InvoiceDate}) und der Leistungszeitraum (\texttt{Delivery}).
-    \item \textbf{Biller (Rechnungssteller)}: Enthält detaillierte Informationen zum Leistenden, inklusive der gesetzlich vorgeschriebenen UID-Nummer (VAT Identification Number), Anschrift, Kontaktdaten und Bankverbindung.
-    \item \textbf{InvoiceRecipient (Rechnungsempfänger)}: Analog zum Biller die Daten des Leistungsempfängers. Hier ist oft die Auftragsreferenz (Order Reference) entscheidend für die automatische Zuordnung.
-    \item \textbf{Details (Positionen)}: Der Kern der Rechnung. Hier werden in einer Liste (\texttt{ItemList}) die einzelnen Positionen (\texttt{ListLineItem}) aufgeführt. Jede Position enthält Menge, Einheit, Einzelpreis, Beschreibung, Steuerreferenz und Zeilensumme.
-    \item \textbf{Tax (Steuern)}: Eine Zusammenfassung der Steuerbeträge, gruppiert nach Steuersätzen. Dies ist essenziell für die Vorsteuerabzugs-Prüfung.
-    \item \textbf{PaymentConditions}: Zahlungsziele, Skonto-Informationen und Fälligkeitsdaten.
+    \item \textbf{Root-Element}: \texttt{<Invoice>} definiert die Grundeigenschaften der Rechnung wie Währung, Sprache und Dokumententitel.
+    \item \textbf{Header-Daten}: Enthält eine eindeutige Rechnungsnummer (\texttt{InvoiceNumber}), das Rechnungsdatum (\texttt{InvoiceDate}) und den Leistungszeitraum (\texttt{Delivery}).
+    \item \textbf{Biller (Rechnungssteller)}: Beinhaltet detaillierte Informationen zum Rechnungssteller wie Anschrift, Kontaktdaten, Bankverbindung und die gesetzlich vorgeschriebenen UID-Nummer (VAT Identification Number).
+    \item \textbf{InvoiceRecipient (Rechnungsempfänger)}: Analog zum Biller entählt dieser Bereich die Daten des Leistungsempfängers. Hier ist oft die Auftragsreferenz (Order Reference) besonders wichtig für die automatisierte Zuordnung der Rechnung.
+    \item \textbf{Details (Positionen)}: Das Herzstück der Rechnung. Hier werden in einer Liste (\texttt{ItemList}) die einzelnen Positionen (\texttt{ListLineItem}) aufgeführt. Jede Position enthält Menge, Einheit, Beschreibung, Einzelpreis, Zeilensumme und Steuerreferenz.
+    \item \textbf{Tax (Steuern)}: Eine Zusammenfassung der Steuerbeträge, sortiert nach Steuersätzen. Dies ist wichtig für die Prüfung des Vorsteuerabzugs.
+    \item \textbf{PaymentConditions}: Beinhaltet Zahlungsziele, Fälligkeitsdaten und Skonto-Informationen.
 \end{itemize}
 
 \subsection{Pflichtfelder und Validierung}
-Die Validität einer ebInterface-Rechnung wird durch ein XML Schema (XSD) definiert. Pflichtfelder sind jene, die laut Umsatzsteuergesetz (UStG) für eine ordnungsgemäße Rechnung erforderlich sind. Dazu gehören in Österreich unter anderem:
+Die Gültigkeit einer ebInterface-Rechnung wird durch ein XML Schema (XSD) definiert. Pflichtfelder sind die Angaben, die das Umsatzsteuergesetz (UStG) für eine ordnungsgemäße Rechnung vorschreibt. In Österreich gehören dazu unter anderem:
 \begin{itemize}
-    \item Name und Anschrift des liefernden und empfangenden Unternehmers.
-    \item Menge und handelsübliche Bezeichnung der Gegenstände.
-    \item Tag der Lieferung oder sonstigen Leistung.
-    \item Entgelt (Netto) und der darauf entfallende Steuerbetrag.
+    \item Name und Anschrift des empfangenden und liefernden Unternehmers.
+    \item Menge und gebräuchliche Bezeichnung der Waren oder erbrachten Leistungen.
+    \item Kalendertag der Lieferung oder Leistung.
+    \item Entgelt (Netto) und der darauf hinfällige Steuerbetrag.
     \item Der anzuwendende Steuersatz.
-    \item Ausstellungsdatum und fortlaufende Nummer.
-    \item UID-Nummer des Leistenden (und ab 10.000 Euro Brutto auch des Empfängers).
+    \item Ausstellungsdatum und fortlaufende Rechnungsnummer.
+    \item UID-Nummer des Rechnungsstellers (und ab 10.000 Euro Brutto auch des Empfängers).
 \end{itemize}
 
-Eine Besonderheit von ebInterface 6.1 ist die strikte Typisierung. Datumsfelder müssen dem ISO 8601 Format entsprechen, Beträge sind als Dezimalzahlen mit definierter Genauigkeit anzugeben. Dies verhindert Interpretationsspielräume, die bei OCR-basierten Verfahren oft zu Fehlern führen.
+Eine Eigenheit von ebInterface 6.1 ist die strikte Festlegung der Datentypen. Datumsfelder müssen dem ISO 8601 Format erfolgen, Beträge werden als Dezimalzahlen mit definierter Genauigkeit angegeben. Dies verhindert Missverständnisse und Fehler, die bei OCR-basierten Verarbeitung häufig auftreten.
 
 \subsection{Beispielhafte XML-Struktur}
-Um die Struktur zu verdeutlichen, zeigt das folgende Listing einen gekürzten Ausschnitt einer validen ebInterface 6.1 Rechnung. Man erkennt deutlich die hierarchische Gliederung und die sprechenden Tag-Namen, die eine Implementierung erleichtern.
+Um die Struktur zu veranschaulichen, zeigt das folgende Beispiel einen gekürzten Ausschnitt einer validen ebInterface 6.1 Rechnung. Man erkennt deutlich die hierarchische Gliederung und die aussagekräftigen Tag-Namen, die eine Umsetzung erleichtern.
 
 \begin{lstlisting}[language=XML, caption={Ausschnitt einer ebInterface 6.1 Rechnung}, label={lst:ebinterface_example}]
 <Invoice xmlns="http://www.ebinterface.at/schema/6p1/" 
@@ -86,39 +86,39 @@ Um die Struktur zu verdeutlichen, zeigt das folgende Listing einen gekürzten Au
 </Invoice>
 \end{lstlisting}
 
-Dieses Beispiel illustriert, wie essenziell die korrekte Verschachtelung ist. Ein häufiger Fehler bei der Generierung ist die Diskrepanz zwischen den berechneten Zeilensummen (\texttt{LineItemAmount}) und den Steuer-Aggregaten im \texttt{Tax}-Block.
+Dieses Beispiel zeigt, wie wichtig die korrekte Verschachtelung ist. Ein häufiger Fehler bei der Generierung passiert, wenn die berechneten Zeilensummen (\texttt{LineItemAmount}) nicht mit den Steuerbeträgen im \texttt{Tax}-Block übereinstimmen.
 
 \section{ZUGFeRD 2.3 und EN 16931 (Deutschland/EU)}
 \label{sec:zugferd}
 
 \subsection{Das hybride Konzept}
-ZUGFeRD (Zentraler User Guide des Forums elektronische Rechnung Deutschland) verfolgt einen anderen Ansatz als ebInterface. Es ist ein hybrides Format, das die Vorteile der menschlichen Lesbarkeit mit der maschinellen Verarbeitbarkeit kombiniert. Eine ZUGFeRD-Rechnung ist technisch gesehen eine PDF/A-3 Datei.
+ZUGFeRD (Zentraler User Guide des Forums elektronische Rechnung Deutschland) verfolgt ein anderes Prinzip als ebInterface. Es handelt sich um ein hybrides Format, welches sowohl für den Menschen gut lesbar ist als auch einfache Verarbeitbarkeit für Computersysteme kombiniert. Eine ZUGFeRD-Rechnung ist technisch gesehen eine PDF/A-3 Datei, in der die strukturierten Rechnungsdaten eingebettet sind.
 
-PDF/A-3 ist eine Erweiterung des PDF-Standards, die es erlaubt, beliebige Dateien als Anhang in das PDF einzubetten. Bei ZUGFeRD wird eine XML-Datei (genannt \texttt{factur-x.xml} oder \texttt{zugferd-invoice.xml}) in das PDF eingebettet. 
+PDF/A-3 ist eine Erweiterung des PDF-Standards, die es ermöglicht, beliebige Dateien als Anhang in das PDF einzubetten. Bei ZUGFeRD wird eine XML-Datei (genannt \texttt{factur-x.xml} oder \texttt{zugferd-invoice.xml}) direkt in das PDF eingebettet. 
 \begin{itemize}
-    \item \textbf{Sichtbare Ebene}: Das PDF zeigt das Rechnungsbild, wie man es von Papier kennt.
-    \item \textbf{Unsichtbare Ebene}: Das eingebettete XML enthält die gleichen Daten in strukturierter Form.
+    \item \textbf{Sichtbare Ebene}: Das PDF zeigt das die Rechnung, wie man es von einer Papier-Rechnung kennt.
+    \item \textbf{Unsichtbare Ebene}: Das eingebettete XML beinhaltet die gleichen Daten in strukturierter Form.
 \end{itemize}
-Dieses Konzept löst das Akzeptanzproblem bei kleineren Empfängern: Wer keine Software zur automatischen Verarbeitung hat, behandelt die Datei wie ein normales PDF. Wer automatisieren will, extrahiert das XML.
+Dieses Konzept löst das Akzeptanzproblem bei kleineren Empfängern: Wer keine Software zur automatischen Verarbeitung hat, kann die Datei wie ein normales PDF verwenden. Wer die Daten automatisch verarbeiten möchte, extrahiert das XML.
 
 \subsection{Profile und Konformität}
-ZUGFeRD 2.3 implementiert die europäische Norm EN 16931. Da die Anforderungen je nach Unternehmensgröße und Branche variieren, definiert ZUGFeRD verschiedene Profile:
+ZUGFeRD 2.3 setzt die europäische Norm EN 16931 um. Da die Anforderungen je nach Unternehmensgröße und Branche variieren, definiert ZUGFeRD verschiedene Profile:
 
 \begin{enumerate}
-    \item \textbf{MINIMUM}: Enthält nur rudimentäre Daten, um eine Buchungshilfe zu bieten. Es erfüllt nicht die Anforderungen an eine steuerrechtliche Rechnung.
-    \item \textbf{BASIC WL (Without Lines)}: Enthält Kopfdaten und Summen, aber keine Positionsdaten. Nützlich für einfache Verbuchung, aber eingeschränkt in der Prüfung.
-    \item \textbf{BASIC}: Erfüllt die Anforderungen des deutschen UStG für Rechnungen unterhalb bestimmter Grenzen, ist aber eine Untermenge der EN 16931.
-    \item \textbf{EN 16931 (COMFORT)}: Das Standardprofil. Es bildet die europäische Norm vollständig ab und ist für den grenzüberschreitenden Verkehr sowie für B2G (Business to Government) geeignet. Dies ist das Zielformat für den \textit{SmartBillConverter}.
-    \item \textbf{EXTENDED}: Enthält zusätzliche branchenspezifische Erweiterungen, die über die Norm hinausgehen.
+    \item \textbf{MINIMUM}: Enthält nur grundlegende Daten, um eine Buchungshilfe zu bieten. Es erfüllt nicht die Anforderungen einer steuerrechtlich gültigen Rechnung.
+    \item \textbf{BASIC WL (Without Lines)}: Enthält Kopfdaten und Summen, jedoch keine einzelnen Positionsdaten. Nützlich für einfache Verbuchung, aber eingeschränkt in der Prüfung.
+    \item \textbf{BASIC}: Erfüllt die Anforderungen des deutschen UStG für Rechnungen unter bestimmten Grenzen, stellt aber eine nur einen kleinen Teil der EN 16931 dar.
+    \item \textbf{EN 16931 (COMFORT)}: Das Standardprofil, welches die europäische Norm vollständig abbildet und für den grenzüberschreitenden Verkehr als auch für B2G (Business to Government) geeignet ist. Dies ist das Zielformat für den \textit{SmartBillConverter}.
+    \item \textbf{EXTENDED}: Ergänzt erweiterte branchenspezifische Erweiterungen, die über die Norm hinausgehen.
 \end{enumerate}
 
 \subsection{CII-Struktur (Cross Industry Invoice)}
-Das XML-Format innerhalb von ZUGFeRD basiert auf der \textit{Cross Industry Invoice} (CII) Syntax der UN/CEFACT. Dies ist ein globaler Standard für Lieferketten-Daten. Die Struktur ist extrem granular und tief verschachtelt. Ein einfacher Preis ist nicht nur eine Zahl, sondern ein komplexes Objekt mit Betrag, Währung, Basismenge und Einheitencode.
+Das XML-Format von ZUGFeRD basiert auf der \textit{Cross Industry Invoice} (CII) Syntax der UN/CEFACT, einem internationalen Standard für Lieferketten-Daten. Die Struktur ist extrem detailliert und tief verschachtelt. Ein einfacher Preis ist nicht nur eine Zahl, sondern ein komplexes Objekt welches Betrag, Währung, Basismenge und Einheitencode enthält.
 
-Beispielhafte Struktur-Tiefe in CII:
+Beispielhafte Verschachtelung in CII:
 \texttt{SupplyChainTradeTransaction} $\rightarrow$ \texttt{IncludedSupplyChainTradeLineItem} $\rightarrow$ \texttt{SpecifiedLineTradeAgreement} $\rightarrow$ \texttt{NetPriceProductTradePrice} $\rightarrow$ \texttt{ChargeAmount}.
-Diese Komplexität macht die Implementierung eines Mappers anspruchsvoll, da hunderte von Pfaden korrekt befüllt werden müssen, um Validierungsfehler zu vermeiden.\footnote{Vgl. FeRD e.V.: \textit{ZUGFeRD 2.3 - Das Datenformat für elektronische Rechnungen}, \url{https://www.ferd-net.de/standards/zugferd-2.3/index.html}, letzter Zugriff am 19.12.2025}
-Im folgenden Listing ist ein Ausschnitt einer ZUGFeRD-XML dargestellt, der die Komplexität im Vergleich zu ebInterface verdeutlicht. Man beachte die tiefen Verschachtelungen für einfache Informationen wie den Steuerbetrag.
+Diese hohe Komplexität macht die Implementierung eines Mappers anspruchsvoll, da hunderte von Pfaden korrekt ausgefüllt werden müssen, um Validierungsfehler zu vermeiden.\footnote{Vgl. FeRD e.V.: \textit{ZUGFeRD 2.3 - Das Datenformat für elektronische Rechnungen}, \url{https://www.ferd-net.de/standards/zugferd-2.3/index.html}, letzter Zugriff am 19.12.2025}
+Das folgende Beispiel stellt ein Ausschnitt einer ZUGFeRD-XML dar, der die Komplexität im Vergleich zu ebInterface verdeutlicht. Es sollten die tiefen Verschachtelungen für einfache Informationen wie den Steuerbetrag beachtet werden.
 
 \begin{lstlisting}[language=XML, caption={Ausschnitt einer ZUGFeRD 2.3 (CII) Rechnung}, label={lst:zugferd_example}]
 <rsm:CrossIndustryInvoice xmlns:rsm="urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100" ...>
@@ -151,23 +151,23 @@ Im folgenden Listing ist ein Ausschnitt einer ZUGFeRD-XML dargestellt, der die K
 \section{UBL vs. CII: Mapping-Überlegungen und Trade-offs}
 \label{sec:ubl_cii}
 
-Die europäische Norm EN 16931 lässt zwei XML-Syntaxen zu: UBL (Universal Business Language) und UN/CEFACT CII. Während Netzwerke wie Peppol (Pan-European Public Procurement OnLine) historisch stark auf UBL (ISO/IEC 19845) setzen, hat sich das Forum elektronische Rechnung Deutschland (FeRD) bei ZUGFeRD für CII entschieden.
+Die europäische Norm EN 16931 erlaubt zwei XML-Syntaxen: UBL (Universal Business Language) und UN/CEFACT CII. Während Netzwerke wie Peppol (Pan-European Public Procurement OnLine) historisch stark auf UBL (ISO/IEC 19845) setzen, verwendet das Forum elektronische Rechnung Deutschland (FeRD) bei ZUGFeRD die CII-Syntax.
 
 \subsection{Strukturelle Unterschiede}
-\textbf{UBL} ist dokumentenzentriert. Es gibt eigene Schemas für \texttt{Order}, \texttt{Invoice}, \texttt{DespatchAdvice}. Die Struktur ist oft flacher und pragmatischer.
-\textbf{CII} ist prozesszentriert. Es versucht, alle Aspekte der Lieferkette in einem universellen Modell abzubilden. Dies führt zu einer höheren Abstraktion und Verschachtelung.
+\textbf{UBL} ist dokumentenzentriert. Es gibt eigene seperate Schemas für \texttt{Order}, \texttt{Invoice}, \texttt{DespatchAdvice}. Die Struktur ist oft kompakter aufgebaut und übersichtlicher.
+\textbf{CII} ist prozesszentriert und bildet alle Aspekte der Lieferkette in einem universellen Modell ab. Dies führt zu einer stärkeren Zusammenfassung komplexer Informationen und Verschachtelung.
 
 Ein konkretes Beispiel ist die Handhabung von Steuern:
 \begin{itemize}
-    \item In \textbf{UBL} werden Steuern oft direkt auf Zeilenebene referenziert (\texttt{ClassifiedTaxCategory}).
-    \item In \textbf{CII} gibt es komplexe \texttt{ApplicableTradeTax}-Strukturen, die sowohl auf Dokumentenebene (Summen) als auch auf Zeilenebene (Referenzen) konsistent gehalten werden müssen.
+    \item In \textbf{UBL} werden Steuern häufig direkt auf Zeilenebene referenziert (\texttt{ClassifiedTaxCategory}).
+    \item In \textbf{CII} gibt es komplexe \texttt{ApplicableTradeTax}-Strukturen, die sowohl auf Dokumentenebene (Summen) als auch auf Zeilenebene (Referenzen) übereinstimmend geführt werden müssen.
 \end{itemize}
 
 \subsection{Herausforderungen für den Konverter}
-Für den \textit{SmartBillConverter} bedeutet dies, dass das interne Datenmodell (das C\# \texttt{Invoice}-Objekt) als "Intermediate Representation" fungieren muss. Es darf nicht zu stark an ebInterface gekoppelt sein, da sonst das Mapping auf CII extrem schwierig wird.
-Das Mapping von ebInterface (XML) direkt auf ZUGFeRD (CII) ist nicht trivial, da die semantischen Bäume unterschiedlich sind. ebInterface gruppiert oft logisch (z.B. "Biller"), während CII funktional gruppiert (z.B. "SupplyChainTradeTransaction").
-Die Entscheidung, eine eigene interne Repräsentation zu nutzen, die von der KI befüllt wird und dann in beide Formate serialisiert werden kann, ist daher architektonisch notwendig.
-Tabelle \ref{tab:format_comparison} fasst die wesentlichen Unterschiede zusammen, die bei der Implementierung berücksichtigt wurden.
+Für den \textit{SmartBillConverter} bedeutet dies, dass das interne Datenmodell (das C\# \texttt{Invoice}-Objekt) als neutrale "Intermediate Representation" dienen muss. Es darf nicht zu stark an ebInterface gekoppelt sein, da sonst das Mapping auf CII extrem kompliziert und aufwändig wird.
+Das direkte Mapping von ebInterface (XML) auf ZUGFeRD (CII) ist nicht wichitg, da die semantischen Strukturen unterschiedlich sind. ebInterface gruppiert oft logisch (z.B. "Biller"), während sich CII funktional sammelt (z.B. "SupplyChainTradeTransaction").
+Deshalb ist es notwendig, eine eigene interne Datenstruktur zu verwenden, welche von der künstlichen Intelligenz befüllt und danach in beide Formate transformiert werden kann.
+Tabelle \ref{tab:format_comparison} fasst die bedeutenden Unterschiede zusammen, die bei der Umsetzung beachtet wurden.
 
 \begin{table}[h]
     \centering

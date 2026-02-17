@@ -1,0 +1,770 @@
+\setauthor{Sebastian Radic}
+\chapter{KI-Integration und XML-Generierung}
+\label{chap:llm_xml_generation}
+
+Die Transformation von unstrukturiertem Text in standardkonformes XML ist der technisch anspruchsvollste Teil des \textit{SmartBillConverter}. Dieses Kapitel dokumentiert die Implementierung der Large Language Model (LLM) Integration mit Google Gemini sowie die Generierung von ebInterface 6.1 und ZUGFeRD 2.3 konformen XML-Dokumenten.
+
+\section{LLM-Integration mit Gemini API}
+\label{sec:llm_integration}
+
+Der \texttt{LlmConversionService} ist das Herzstück der intelligenten Datenextraktion. Er nimmt unstrukturierten Text und transformiert ihn in strukturierte \texttt{InvoiceData}-Objekte.
+
+\subsection{Service-Architektur und Datenmodelle}
+\label{subsec:llm_architecture}
+
+Der Service definiert klare Interface-Contracts:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={ILlmConversionService Interface}, label={lst:llm_interface}]
+public interface ILlmConversionService
+{
+    Task<LlmResponse> ConvertToXmlAsync(string extractedText);
+}
+
+public class LlmResponse
+{
+    public string EbInterfaceXml { get; set; } = string.Empty;
+    public string FinalEbInterfaceXml { get; set; } = string.Empty;
+    public string ZugferdXml { get; set; } = string.Empty;
+    public InvoiceData ParsedData { get; set; } = new();
+    public bool IsValidXml { get; set; } = false;
+    public List<string> ValidationErrors { get; set; } = new();
+    public string ProcessingSteps { get; set; } = string.Empty;
+}
+\end{lstlisting}
+
+Die \texttt{LlmResponse} bündelt alle Verarbeitungsergebnisse: das geparste Datenmodell, die generierten XMLs für beide Standards, Validierungsergebnisse und einen Audit-Trail der Verarbeitungsschritte. Dies ermöglicht Debugging und Compliance-Nachweise.
+
+\subsection{InvoiceData: Das interne Datenmodell}
+Das \texttt{InvoiceData}-POCO (Plain Old CLR Object) ist die Intermediate Representation zwischen LLM-Output und XML-Generierung:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={InvoiceData Datenmodell}, label={lst:invoice_data}]
+public class InvoiceData
+{
+    // Basisdaten
+    public string? InvoiceNumber { get; set; }
+    public decimal InvoiceAmount { get; set; }
+    public DateTime InvoiceDate { get; set; }
+    public DateTime DueDate { get; set; }
+    public string? VatNumber { get; set; }
+    public string? IBAN { get; set; }
+    public string? PaymentReference { get; set; }
+    public decimal? DiscountAmount { get; set; }
+    public string? PaymentMethod { get; set; }
+    public decimal? ShippingCost { get; set; }
+    
+    // Rechnungssteller
+    public string? BillerName { get; set; }
+    public string? BillerStreet { get; set; }
+    public string? BillerZIP { get; set; }
+    public string? BillerTown { get; set; }
+    public string? BillerCountry { get; set; }
+    public string? BillerVatNumber { get; set; }
+    
+    // Rechnungsempfaenger
+    public string? RecipientName { get; set; }
+    public string? RecipientStreet { get; set; }
+    public string? RecipientZIP { get; set; }
+    public string? RecipientTown { get; set; }
+    public string? RecipientCountry { get; set; }
+    public string? RecipientVatNumber { get; set; }
+    
+    // Positionsdaten
+    public List<InvoiceItem>? Items { get; set; }
+    
+    // KRITISCH: Netto/Brutto-Logik
+    public bool IsNetto { get; set; } = false;
+    public string? PriceAnalysis { get; set; }
+}
+
+public class InvoiceItem
+{
+    public int Position { get; set; }
+    public string? ArticleNumber { get; set; }
+    public string? Description { get; set; }
+    public decimal Quantity { get; set; }
+    public decimal UnitPrice { get; set; }
+    public decimal TotalPrice { get; set; }
+    public decimal TaxRate { get; set; } = 20.0m;
+    public decimal TaxAmount { get; set; } = 0.0m;
+}
+\end{lstlisting}
+
+Das Modell ist bewusst flach gehalten, um die JSON-Serialisierung für das LLM zu vereinfachen. Die separaten Biller/Recipient-Felder ermöglichen einfaches Mapping auf ebInterface (flache Struktur) und ZUGFeRD (verschachtelte Struktur).
+
+Die kritische \texttt{IsNetto}-Property löst ein fundamentales Problem: Rechnungen können Beträge als Netto+MwSt oder als Brutto (inkl. MwSt) angeben. Das LLM muss diese Semantik verstehen und dem Backend mitteilen, damit die Steuerberechnung korrekt erfolgt.
+
+\subsection{Prompt Engineering: Der System-Prompt}
+Der Prompt ist das "Programm" für das LLM. Er muss extrem präzise sein, da LLMs zu Halluzinationen neigen:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Gemini System-Prompt (Auszug)}, label={lst:system_prompt}]
+private string BuildSystemPrompt()
+{
+    return @"Du bist ein hochpraeziser Datenextraktions-Assistent 
+für Rechnungen. Deine Aufgabe ist es, aus unstrukturiertem Text 
+strukturierte JSON-Daten zu extrahieren.
+
+KRITISCH WICHTIG - NETTO vs. BRUTTO ERKENNUNG:
+Eine Rechnung kann entweder Netto-Betraege (ohne Steuer) ODER 
+Brutto-Betraege (inkl. Steuer) enthalten. Du MUSST anhand des 
+Textes entscheiden und das Flag 'isNetto' korrekt setzen.
+
+NETTO-Hinweise (setze 'isNetto': true):
+- Explizite Woerter: 'Nettobetrag', 'zzgl. MwSt.', 'zzgl. 20%'
+- Separate Zeilen fuer 'Netto' und 'USt'
+- Bei jeder Position steht 'netto + 20% = brutto'
+- Gesamtsumme glatt (100,00€) aber Steuer krumm (16,67€) = Gesamtbetrag ist BRUTTO
+
+BRUTTO-Hinweise (setze 'isNetto': false):
+- Explizite Woerter: 'Bruttobetrag', 'inkl. MwSt.', 'inkl. 20%'
+- Nur Gesamtbetrag sichtbar mit 'inkl. USt' oder 'bei X% USt'
+- Positionspreise sind krumme Betraege (11,99€, 8,39€) = oft Brutto
+- Keine separaten Steuerzeilen sichtbar
+
+WICHTIG: Dokumentiere deine Entscheidung in 'priceAnalysis' 
+(warum Netto oder Brutto?).
+
+KRITISCH - RICHTIGE WERTE FUER totalPrice WAEHLEN:
+- Wenn 'isNetto': true → verwende die NETTO-Werte fuer totalPrice
+- Wenn 'isNetto': false → verwende die BRUTTO-Werte fuer totalPrice
+
+KRITISCH - ZAHLEN GENAU EXTRAHIEREN:
+- Lies die Zahlen EXAKT aus der Tabelle ab
+- Pruefe Dezimalstellen: 150,00 → 150.00 (nicht 15000.00!)
+- Pruefe Tausendertrennzeichen: 2.000,00 → 2000.00 (nicht 2.00!)
+- NIEMALS raten oder schaetzen - nur exakte Werte aus dem Text!
+
+Antworte NUR mit validem JSON. Fuege KEINE Erklaerungen hinzu.";
+}
+\end{lstlisting}
+
+Der Prompt ist das Ergebnis von Dutzenden Iterationen. Jede Regel adressiert ein spezifisches Halluzinations-Problem, das in Tests aufgetreten ist. Beispiel: Ohne die Dezimalstellen-Regel interpretierte das LLM "150,00" oft als "15000.00" (fehlende Komma-Konvertierung).
+
+Die \texttt{PriceAnalysis}-Property ist ein Debugging-Feature: Das LLM muss seine Entscheidung begründen. Dies macht Fehler nachvollziehbar und ermöglicht Prompt-Verbesserungen.
+
+\subsection{HTTP-Client und API-Call}
+Die Kommunikation mit der Gemini API erfolgt via \texttt{HttpClient}:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Gemini API-Call Implementation}, label={lst:gemini_api_call}]
+public class LlmConversionService : ILlmConversionService
+{
+    private readonly HttpClient _httpClient;
+    private readonly ILogger<LlmConversionService> _logger;
+    private readonly string _apiKey;
+    private readonly string _apiEndpoint;
+
+    public LlmConversionService(
+        HttpClient httpClient, 
+        IConfiguration configuration,
+        ILogger<LlmConversionService> logger)
+    {
+        _httpClient = httpClient;
+        _logger = logger;
+        
+        _apiKey = Environment.GetEnvironmentVariable("GEMINI_API_KEY") 
+            ?? throw new InvalidOperationException("GEMINI_API_KEY fehlt");
+        
+        _apiEndpoint = configuration["Gemini:Endpoint"] 
+            ?? "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash-exp:generateContent";
+    }
+
+    public async Task<LlmResponse> ConvertToXmlAsync(string extractedText)
+    {
+        var systemPrompt = BuildSystemPrompt();
+        var userPrompt = $"Extrahiere die Rechnungsdaten aus diesem Text:\n\n{extractedText}";
+
+        var requestBody = new
+        {
+            contents = new[]
+            {
+                new
+                {
+                    role = "user",
+                    parts = new[] 
+                    { 
+                        new { text = systemPrompt + "\n\n" + userPrompt } 
+                    }
+                }
+            },
+            generationConfig = new
+            {
+                temperature = 0.0,
+                candidateCount = 1,
+                response_mime_type = "application/json",
+                response_schema = BuildJsonSchema()
+            }
+        };
+
+        var jsonContent = JsonSerializer.Serialize(requestBody);
+        var content = new StringContent(jsonContent, Encoding.UTF8, "application/json");
+
+        var response = await _httpClient.PostAsync(
+            $"{_apiEndpoint}?key={_apiKey}", 
+            content);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            var errorBody = await response.Content.ReadAsStringAsync();
+            _logger.LogError("Gemini API error: {StatusCode} - {Body}", 
+                response.StatusCode, errorBody);
+            throw new HttpRequestException(
+                $"Gemini API failed: {response.StatusCode}");
+        }
+
+        var responseBody = await response.Content.ReadAsStringAsync();
+        var llmOutput = ParseGeminiResponse(responseBody);
+        
+        return llmOutput;
+    }
+}
+\end{lstlisting}
+
+Die \texttt{HttpClient}-Injection via Constructor ist Best Practice für Testbarkeit und Connection-Pooling. Der API-Key wird aus Environment Variables geladen (Fail-Fast bei Fehlen).
+
+Die \texttt{generationConfig} ist kritisch:
+\begin{itemize}
+    \item \texttt{temperature = 0.0}: Maximale Determinismus (keine Kreativität)
+    \item \texttt{response\_mime\_type = "application/json"}: Erzwingt JSON-Output
+    \item \texttt{response\_schema}: Definiert die exakte JSON-Struktur (Type Safety)
+\end{itemize}
+
+Der \texttt{response\_schema}-Parameter nutzt Geminis "Constrained Decoding": Das Modell kann nur Tokens generieren, die dem Schema entsprechen. Dies verhindert syntaktisch invalides JSON.\footnote{Vgl. Google AI: \textit{Gemini API - Structured Output}, \url{https://ai.google.dev/tutorials/structured_output}, letzter Zugriff am 06.01.2026}
+
+\subsection{JSON Schema für Type-Safe Extraction}
+Das JSON-Schema definiert die erwartete Struktur als Machine-Readable Contract:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={JSON Schema Builder}, label={lst:json_schema_builder}]
+private object BuildJsonSchema()
+{
+    return new
+    {
+        type = "object",
+        properties = new
+        {
+            invoiceNumber = new { type = "string" },
+            invoiceDate = new { type = "string", format = "date" },
+            invoiceAmount = new { type = "number" },
+            dueDate = new { type = "string", format = "date" },
+            vatNumber = new { type = "string" },
+            iban = new { type = "string" },
+            billerName = new { type = "string" },
+            billerStreet = new { type = "string" },
+            billerZIP = new { type = "string" },
+            billerTown = new { type = "string" },
+            recipientName = new { type = "string" },
+            items = new
+            {
+                type = "array",
+                items = new
+                {
+                    type = "object",
+                    properties = new
+                    {
+                        position = new { type = "integer" },
+                        description = new { type = "string" },
+                        quantity = new { type = "number" },
+                        unitPrice = new { type = "number" },
+                        totalPrice = new { type = "number" },
+                        taxRate = new { type = "number" },
+                        taxAmount = new { type = "number" }
+                    },
+                    required = new[] { "position", "description", "quantity", "unitPrice", "totalPrice", "taxRate" }
+                }
+            },
+            isNetto = new { type = "boolean" },
+            priceAnalysis = new { type = "string" }
+        },
+        required = new[] { "invoiceNumber", "invoiceDate", "invoiceAmount", "isNetto" }
+    };
+}
+\end{lstlisting}
+
+Das Schema garantiert Type-Safety: \texttt{invoiceAmount} muss eine \texttt{number} sein, nicht ein String. \texttt{required}-Arrays definieren Pflichtfelder. Das LLM kann kein JSON mit fehlendem \texttt{invoiceNumber} generieren.
+
+\subsection{Steuerberechnung: Das Netto/Brutto-Problem}
+Die korrekte Steuerberechnung ist essenziell für die Business Rule BR-S-08 (siehe Kapitel \ref{sec:validation}). Die Implementierung muss zwischen Netto- und Brutto-Rechnungen unterscheiden:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Intelligente Steuerberechnung}, label={lst:tax_calculation}]
+private List<ListLineItemType> CalculateLineItems(InvoiceData data)
+{
+    var lineItems = new List<ListLineItemType>();
+    
+    _logger.LogInformation($"LLM-ANALYSE: IsNetto={data.IsNetto}, Begruendung: {data.PriceAnalysis}");
+    
+    foreach (var item in data.Items)
+    {
+        decimal taxAmount;
+        decimal netAmount;
+        decimal bruttoAmount;
+        
+        if (data.IsNetto)
+        {
+            // NETTO-RECHNUNG: totalPrice ist netto, USt wird dazugerechnet
+            _logger.LogInformation($"Item {item.Position}: NETTO-Rechnung erkannt - TotalPrice={item.TotalPrice} ist NETTO");
+            netAmount = RoundAmount(item.TotalPrice);
+            taxAmount = RoundAmount(netAmount * item.TaxRate / 100);
+            bruttoAmount = RoundAmount(netAmount + taxAmount);
+        }
+        else
+        {
+            // BRUTTO-RECHNUNG: totalPrice ist brutto, USt ist enthalten
+            _logger.LogInformation($"Item {item.Position}: BRUTTO-Rechnung erkannt - TotalPrice={item.TotalPrice} ist BRUTTO");
+            bruttoAmount = RoundAmount(item.TotalPrice);
+            netAmount = RoundAmount(bruttoAmount / (1 + item.TaxRate / 100));
+            taxAmount = RoundAmount(bruttoAmount - netAmount);
+        }
+        
+        _logger.LogInformation($"Item {item.Position} final: Netto={netAmount}, USt={taxAmount}, Brutto={bruttoAmount} (Rate: {item.TaxRate}%, isNetto={data.IsNetto})");
+        
+        lineItems.Add(new ListLineItemType
+        {
+            PositionNumber = item.Position,
+            Description = item.Description ?? "Artikel",
+            Quantity = new QuantityType { Unit = "Stueck", Value = item.Quantity },
+            UnitPrice = new UnitPriceType { Value = item.UnitPrice },
+            TaxItem = new TaxItemType
+            {
+                TaxableAmount = netAmount,
+                TaxPercent = new TaxPercentType { Value = item.TaxRate, TaxCategoryCode = "S" },
+                TaxAmount = taxAmount
+            },
+            LineItemAmount = bruttoAmount
+        });
+    }
+    
+    return lineItems;
+}
+
+private decimal RoundAmount(decimal amount)
+{
+    return Math.Round(amount, 2, MidpointRounding.AwayFromZero);
+}
+\end{lstlisting}
+
+Die Logik ist mathematisch präzise:
+\begin{itemize}
+    \item \textbf{Netto}: $\text{Brutto} = \text{Netto} \times (1 + \frac{\text{Steuersatz}}{100})$
+    \item \textbf{Brutto}: $\text{Netto} = \frac{\text{Brutto}}{1 + \frac{\text{Steuersatz}}{100}}$
+\end{itemize}
+
+\texttt{RoundAmount} nutzt \texttt{MidpointRounding.AwayFromZero} (kaufmännisches Runden): 2.125 wird auf 2.13 gerundet, nicht 2.12. Dies ist steuerrechtlich korrekt.\footnote{Vgl. § 16 UStG: \textit{Bemessungsgrundlage}, Rundung auf zwei Nachkommastellen}
+
+Das extensive Logging ist Production-Ready: Jede Steuerberechnung ist nachvollziehbar und auditierbar.
+
+\section{ebInterface 6.1 XML-Serialisierung}
+\label{sec:ebinterface_serialization}
+
+Die Transformation von \texttt{InvoiceData} in ebInterface 6.1 XML erfolgt via C\# XML-Serialisierung mit Attributen.
+
+\subsection{XML-Serialisierungs-Klassen}
+Die ebInterface-Struktur wird als C\#-Objektmodell abgebildet:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={ebInterface Root-Element}, label={lst:ebinterface_root}]
+[XmlRoot("Invoice", Namespace = "http://www.ebinterface.at/schema/6p1/")]
+public class EbInterfaceInvoice
+{
+    [XmlElement("InvoiceNumber")]
+    public string InvoiceNumber { get; set; } = string.Empty;
+
+    [XmlElement("InvoiceDate", DataType = "date")]
+    public DateTime InvoiceDate { get; set; }
+
+    [XmlElement("Biller")]
+    public BillerType Biller { get; set; } = new();
+
+    [XmlElement("InvoiceRecipient")]
+    public InvoiceRecipientType InvoiceRecipient { get; set; } = new();
+
+    [XmlElement("Details")]
+    public DetailsType Details { get; set; } = new();
+
+    [XmlElement("Tax")]
+    public TaxType Tax { get; set; } = new();
+
+    [XmlElement("TotalGrossAmount")]
+    public decimal TotalGrossAmount { get; set; }
+
+    [XmlAttribute("GeneratingSystem")]
+    public string GeneratingSystem { get; set; } = "SmartBillConverter v1.0";
+
+    [XmlAttribute("InvoiceCurrency")]
+    public string InvoiceCurrency { get; set; } = "EUR";
+}
+\end{lstlisting}
+
+Das \texttt{[XmlRoot]}-Attribut definiert den Root-Tag-Namen und den XML-Namespace. \texttt{[XmlElement]}-Attribute mappen Properties auf XML-Tags. \texttt{DataType = "date"} erzwingt ISO 8601-Format (YYYY-MM-DD).
+
+Die verschachtelten Typen (BillerType, DetailsType) spiegeln die ebInterface-Hierarchie wider:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Nested ebInterface Types}, label={lst:ebinterface_nested}]
+public class BillerType
+{
+    [XmlElement("VATIdentificationNumber")]
+    public string VATIdentificationNumber { get; set; } = string.Empty;
+
+    [XmlElement("Address")]
+    public AddressType Address { get; set; } = new();
+}
+
+public class AddressType
+{
+    [XmlElement("Name")]
+    public string Name { get; set; } = "Kunde";
+
+    [XmlElement("Street")]
+    public string? Street { get; set; }
+
+    [XmlElement("ZIP")]
+    public string? ZIP { get; set; }
+
+    [XmlElement("Town")]
+    public string? Town { get; set; }
+
+    [XmlElement("Country")]
+    public string? Country { get; set; }
+}
+\end{lstlisting}
+
+\subsection{Serialisierung und Namespace-Handling}
+Die Serialisierung nutzt \texttt{XmlSerializer}:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={ebInterface XML-Generierung}, label={lst:ebinterface_serialization}]
+private string SerializeToEbInterfaceXml(EbInterfaceInvoice invoice)
+{
+    var namespaces = new XmlSerializerNamespaces();
+    namespaces.Add("", "http://www.ebinterface.at/schema/6p1/");
+
+    var serializer = new XmlSerializer(typeof(EbInterfaceInvoice));
+    
+    var settings = new XmlWriterSettings
+    {
+        Indent = true,
+        IndentChars = "  ",
+        Encoding = Encoding.UTF8,
+        OmitXmlDeclaration = false
+    };
+
+    using var stringWriter = new StringWriter();
+    using var xmlWriter = XmlWriter.Create(stringWriter, settings);
+    
+    serializer.Serialize(xmlWriter, invoice, namespaces);
+    
+    return stringWriter.ToString();
+}
+\end{lstlisting}
+
+\texttt{XmlSerializerNamespaces} verhindert Auto-Generated Namespace-Prefixes (xsi, xsd). \texttt{XmlWriterSettings} konfiguriert Formatierung: \texttt{Indent = true} für lesbare XML, \texttt{OmitXmlDeclaration = false} fügt \texttt{<?xml version="1.0"?>} hinzu.
+
+\subsection{XSD-Validierung}
+Nach der Serialisierung erfolgt XSD-Validierung gegen das offizielle ebInterface 6.1 Schema:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={XSD-Validierung}, label={lst:xsd_validation}]
+private List<string> ValidateAgainstXsd(string xml, string xsdPath)
+{
+    var errors = new List<string>();
+    
+    var schemas = new XmlSchemaSet();
+    schemas.Add("http://www.ebinterface.at/schema/6p1/", xsdPath);
+    
+    var settings = new XmlReaderSettings
+    {
+        ValidationType = ValidationType.Schema,
+        Schemas = schemas
+    };
+    
+    settings.ValidationEventHandler += (sender, args) =>
+    {
+        errors.Add($"{args.Severity}: {args.Message}");
+        _logger.LogWarning("XSD Validation: {Severity} - {Message}", 
+            args.Severity, args.Message);
+    };
+
+    using var stringReader = new StringReader(xml);
+    using var xmlReader = XmlReader.Create(stringReader, settings);
+    
+    try
+    {
+        while (xmlReader.Read()) { }
+    }
+    catch (XmlException ex)
+    {
+        errors.Add($"XML Parse Error: {ex.Message}");
+    }
+    
+    return errors;
+}
+\end{lstlisting}
+
+\texttt{XmlSchemaSet} lädt das XSD-File. \texttt{ValidationEventHandler} sammelt alle Fehler (nicht nur den ersten). Die Methode liest das gesamte XML durch (\texttt{while (xmlReader.Read())}), wodurch alle Validierungen getriggert werden.
+
+Typische Fehler:
+\begin{itemize}
+    \item Fehlende Pflichtfelder: "Element 'Invoice' missing required child 'InvoiceNumber'"
+    \item Falsches Datumsformat: "Value '01.01.2024' is invalid according to datatype 'date'"
+    \item Ungültige Enum-Werte: "Value 'XYZ' is not valid for attribute 'Currency'"
+\end{itemize}
+
+\section{ZUGFeRD 2.3 CII-XML-Generierung}
+\label{sec:zugferd_generation}
+
+ZUGFeRD ist strukturell komplexer als ebInterface. Die CII-Syntax (Cross Industry Invoice) ist stark verschachtelt.
+
+\subsection{ZUGFeRD Datenmodell}
+Das Projekt nutzt dedizierte Datenklassen für ZUGFeRD:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={ZUGFeRD InvoiceData Model}, label={lst:zugferd_model}]
+public class ZugferdInvoiceData
+{
+    // Basis Rechnungsinfo
+    public string InvoiceNumber { get; set; } = string.Empty;
+    public DateTime InvoiceDate { get; set; }
+    public DateTime? DueDate { get; set; }
+    public decimal TotalAmount { get; set; }
+    public decimal NetAmount { get; set; }
+    public decimal TaxAmount { get; set; }
+    public string Currency { get; set; } = "EUR";
+
+    // Verkaeufer/Rechnungssteller
+    public ZugferdParty Seller { get; set; } = new();
+
+    // Kaeufer/Rechnungsempfaenger
+    public ZugferdParty Buyer { get; set; } = new();
+
+    // Rechnungspositionen
+    public List<ZugferdLineItem> LineItems { get; set; } = new();
+
+    // Zahlungsinfo
+    public string? PaymentReference { get; set; }
+    public string? IBAN { get; set; }
+    public string? BIC { get; set; }
+    public decimal TaxRate { get; set; } = 20.0m;
+
+    // KRITISCH: Netto/Brutto Flag
+    public bool IsNetto { get; set; } = false;
+}
+
+public class ZugferdParty
+{
+    public string Name { get; set; } = string.Empty;
+    public string Street { get; set; } = string.Empty;
+    public string ZIP { get; set; } = string.Empty;
+    public string City { get; set; } = string.Empty;
+    public string Country { get; set; } = "AT";
+    public string? VatNumber { get; set; }
+}
+\end{lstlisting}
+
+Das Modell ist ähnlich zu \texttt{InvoiceData}, aber ZUGFeRD-spezifisch benannt (\texttt{Seller}/\texttt{Buyer} statt Biller/Recipient).
+
+\subsection{CII XML-Struktur mit Namespaces}
+ZUGFeRD nutzt vier XML-Namespaces:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={ZUGFeRD Namespaces}, label={lst:zugferd_namespaces}]
+public static class Namespaces
+{
+    public const string Rsm = "urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100";
+    public const string Ram = "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100";
+    public const string Udt = "urn:un:unece:uncefact:data:standard:UnqualifiedDataType:100";
+    public const string Qdt = "urn:un:unece:uncefact:data:standard:QualifiedDataType:100";
+}
+
+[XmlRoot("CrossIndustryInvoice", Namespace = Namespaces.Rsm)]
+public class CrossIndustryInvoice
+{
+    [XmlNamespaceDeclarations]
+    public XmlSerializerNamespaces Xmlns { get; set; } = new XmlSerializerNamespaces(new[]
+    {
+        new XmlQualifiedName("rsm", Namespaces.Rsm),
+        new XmlQualifiedName("ram", Namespaces.Ram),
+        new XmlQualifiedName("udt", Namespaces.Udt),
+        new XmlQualifiedName("qdt", Namespaces.Qdt)
+    });
+
+    [XmlElement("ExchangedDocumentContext", Namespace = Namespaces.Rsm)]
+    public ExchangedDocumentContextType ExchangedDocumentContext { get; set; } = new();
+
+    [XmlElement("ExchangedDocument", Namespace = Namespaces.Rsm)]
+    public ExchangedDocumentType ExchangedDocument { get; set; } = new();
+
+    [XmlElement("SupplyChainTradeTransaction", Namespace = Namespaces.Rsm)]
+    public SupplyChainTradeTransactionType SupplyChainTradeTransaction { get; set; } = new();
+}
+\end{lstlisting}
+
+\texttt{[XmlNamespaceDeclarations]} definiert die Namespace-Prefixes (rsm, ram, etc.). Jedes \texttt{[XmlElement]} muss den korrekten Namespace angeben, sonst schlägt die Validierung fehl.
+
+\subsection{Profile-Konformität (EN 16931)}
+ZUGFeRD definiert Profile. Das Projekt targetiert \textbf{EN 16931 (COMFORT)}:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={ZUGFeRD Profile-Declaration}, label={lst:zugferd_profile}]
+public class ExchangedDocumentContextType
+{
+    [XmlElement("GuidelineSpecifiedDocumentContextParameter", Namespace = Namespaces.Ram)]
+    public DocumentContextParameterType GuidelineSpecifiedDocumentContextParameter { get; set; } = new();
+}
+
+public class DocumentContextParameterType
+{
+    [XmlElement("ID", Namespace = Namespaces.Ram)]
+    public string ID { get; set; } = "urn:cen.eu:en16931:2017#compliant#urn:factur-x.eu:1p0:extended";
+}
+\end{lstlisting}
+
+Die \texttt{GuidelineSpecifiedDocumentContextParameter.ID} deklariert das Profile. Der Wert \texttt{urn:cen.eu:en16931:2017} signalisiert EN 16931-Konformität. Dies ist für B2G (Business-to-Government) Pflicht.\footnote{Vgl. European Commission: \textit{Directive 2014/55/EU on electronic invoicing}, \url{https://ec.europa.eu/digital-building-blocks/wikis/display/DIGITAL/eInvoicing}, letzter Zugriff am 06.01.2026}
+
+\subsection{Komplexe Verschachtelung: SupplyChainTradeTransaction}
+Der CII-Standard ist extrem verschachtelt. Ein Beispiel ist der Preis:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={CII Preis-Verschachtelung}, label={lst:cii_nesting}]
+public class SupplyChainTradeLineItemType
+{
+    [XmlElement("SpecifiedLineTradeAgreement", Namespace = Namespaces.Ram)]
+    public LineTradeAgreementType SpecifiedLineTradeAgreement { get; set; } = new();
+}
+
+public class LineTradeAgreementType
+{
+    [XmlElement("NetPriceProductTradePrice", Namespace = Namespaces.Ram)]
+    public TradePriceType NetPriceProductTradePrice { get; set; } = new();
+}
+
+public class TradePriceType
+{
+    [XmlElement("ChargeAmount", Namespace = Namespaces.Ram)]
+    public AmountType ChargeAmount { get; set; } = new();
+}
+
+public class AmountType
+{
+    [XmlAttribute("currencyID")]
+    public string Currency { get; set; } = "EUR";
+
+    [XmlText]
+    public decimal Value { get; set; }
+}
+\end{lstlisting}
+
+Um einen einfachen Preis zu setzen, muss man vier Objektebenen durchlaufen:
+\texttt{LineItem} → \texttt{SpecifiedLineTradeAgreement} → \texttt{NetPriceProductTradePrice} → \texttt{ChargeAmount.Value}.
+
+Diese Komplexität ist der Preis für UN/CEFACTs "universelles" Modell. Im Projekt wurden Helper-Methoden erstellt, um diese Verschachtelung zu abstrahieren.
+
+\subsection{PDF/A-3 Generierung: Mögliche zukünftige Erweiterung}
+ZUGFeRD ist konzeptionell ein hybrides Format: PDF mit eingebettetem XML. Im aktuellen Projektstand wird ausschließlich das XML generiert (siehe \texttt{ZugferdService.GenerateZugferdXmlAsync}). Die vollständige PDF/A-3-Generierung mit eingebettetem XML wurde als mögliche zukünftige Erweiterung evaluiert, aber \textbf{nicht implementiert}.
+
+Die theoretische Implementierung würde die Bibliothek \textit{iText7} nutzen. Das folgende Listing zeigt den konzeptionellen Ansatz:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={PDF/A-3 Generierung - Konzeptioneller Ansatz (nicht implementiert)}, label={lst:pdfa3_generation}]
+private byte[] GenerateZugferdPdfWithXml(string zugferdXml, string invoiceNumber)
+{
+    using var memoryStream = new MemoryStream();
+    
+    // PDF/A-3 Conformance
+    var pdfWriter = new PdfWriter(memoryStream);
+    var pdfDocument = new PdfDocument(pdfWriter);
+    pdfDocument.SetTagged(); // Accessibility
+    
+    var document = new Document(pdfDocument);
+    
+    // Rechnungs-Content (visuell)
+    document.Add(new Paragraph("RECHNUNG")
+        .SetFont(PdfFontFactory.CreateFont(StandardFonts.HELVETICA_BOLD))
+        .SetFontSize(20));
+    document.Add(new Paragraph($"Rechnungsnummer: {invoiceNumber}"));
+    // ... weitere PDF-Elemente
+    
+    // XML als Attachment einbetten
+    var xmlBytes = Encoding.UTF8.GetBytes(zugferdXml);
+    var fileSpec = PdfFileSpec.CreateEmbeddedFileSpec(
+        pdfDocument, 
+        xmlBytes, 
+        "factur-x.xml", 
+        "factur-x.xml",
+        PdfName.ApplicationXml,
+        new PdfDictionary()
+    );
+    
+    pdfDocument.AddFileAttachment("factur-x.xml", fileSpec);
+    
+    // Metadata fuer ZUGFeRD-Compliance
+    var catalog = pdfDocument.GetCatalog();
+    catalog.Put(PdfName.AFRelationship, new PdfName("Data"));
+    
+    document.Close();
+    
+    return memoryStream.ToArray();
+}
+\end{lstlisting}
+
+\texttt{PdfFileSpec.CreateEmbeddedFileSpec} würde das XML als Attachment einbetten. Der Name \texttt{factur-x.xml} ist konventionell (ZUGFeRD/Factur-X Standard). \texttt{AFRelationship = "Data"} würde das XML als maschinenlesbare Daten kennzeichnen.
+
+Diese Funktionalität wurde im Projekt nicht implementiert. Der aktuelle \texttt{ZugferdService} liefert ausschließlich XML-Strings zurück. Für Production-Systeme wäre die vollständige PDF/A-3-Generierung mit Templates (z.B. Razor Views zu HTML, dann HTML zu PDF via Playwright oder wkhtmltopdf) eine sinnvolle Erweiterung.\footnote{Vgl. iText Software: \textit{iText 7 - PDF/A-3 and attachments}, \url{https://kb.itextpdf.com/home/it7kb/ebooks/itext-7-jump-start-tutorial-for-java/chapter-7-creating-pdfs-with-pdf-a}, letzter Zugriff am 06.01.2026}
+
+\section{Validierung und Qualitätssicherung}
+\label{sec:testing_validation}
+
+Die Qualitätssicherung der generierten XMLs erfolgt mehrstufig im \textit{SmartBillConverter}.
+
+\subsection{XSD-Validierung: Implementierter Standard}
+Die primäre Validierung erfolgt über XSD-Schemas (siehe Listing \ref{lst:xsd_validation} in Kapitel \ref{sec:ebinterface_serialization}). Die Methode \texttt{ValidateAgainstXsd} im \texttt{LlmConversionService} prüft sowohl ebInterface 6.1 als auch ZUGFeRD 2.3 XMLs gegen ihre offiziellen XSD-Dateien. Dies stellt sicher, dass die generierten Dokumente syntaktisch korrekt sind und alle Pflichtfelder enthalten.
+
+Die Validierung nutzt \texttt{XmlSchemaSet} und \texttt{ValidationEventHandler}, um alle Fehler zu sammeln:
+\begin{itemize}
+    \item Fehlende Pflichtfelder werden als \texttt{XmlSeverityType.Error} gemeldet
+    \item Typ-Mismatchs (z.B. String statt Decimal) führen zu Parsing-Errors
+    \item Namespaces-Fehler werden durch Schema-Abgleich erkannt
+\end{itemize}
+
+Die \texttt{ValidationErrors}-Liste im \texttt{LlmResponse} gibt dem Frontend detailliertes Feedback für Debugging.
+
+\subsection{Schematron-Validierung: Mögliche zukünftige Erweiterung}
+Während XSD die syntaktische Korrektheit sicherstellt, würde Schematron die semantische Validierung ermöglichen (Business Rules wie BR-S-08). Diese Funktionalität wurde im Projekt \textbf{nicht implementiert}, aber als potenzielle Erweiterung evaluiert.
+
+Der konzeptionelle Ansatz würde XSLT-basierte Schematron-Schemas nutzen:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Schematron-Validierung - Konzeptioneller Ansatz (nicht implementiert)}, label={lst:schematron}]
+private List<string> ValidateWithSchematron(string xml, string schematronPath)
+{
+    var errors = new List<string>();
+    
+    // Lade Schematron-Schema (XSLT-basiert)
+    var xslt = new XslCompiledTransform();
+    xslt.Load(schematronPath);
+    
+    // Transformiere XML mit Schematron-Rules
+    using var xmlReader = XmlReader.Create(new StringReader(xml));
+    using var resultWriter = new StringWriter();
+    
+    xslt.Transform(xmlReader, null, resultWriter);
+    
+    var result = resultWriter.ToString();
+    
+    // Parse SVRL (Schematron Validation Report Language)
+    var svrlDoc = XDocument.Parse(result);
+    var failedAsserts = svrlDoc.Descendants()
+        .Where(e => e.Name.LocalName == "failed-assert");
+    
+    foreach (var assert in failedAsserts)
+    {
+        var message = assert.Element("text")?.Value ?? "Unknown error";
+        errors.Add($"BR-Violation: {message}");
+        _logger.LogError("Schematron validation failed: {Message}", message);
+    }
+    
+    return errors;
+}
+\end{lstlisting}
+
+Schematron-Schemas sind XSLT-basiert. Die Transformation produziert SVRL (Schematron Validation Report Language), ein XML mit \texttt{<failed-assert>}-Elementen für Verstöße.
+
+Beispiel Business Rule:
+\begin{lstlisting}[language=xml, caption={Schematron Rule BR-S-08 (Beispiel)}]
+<sch:rule context="Invoice">
+  <sch:assert test="sum(//TaxItem/TaxAmount) = Tax/TotalAmount">
+    BR-S-08: Summe der Steuerbetraege muss TotalAmount entsprechen
+  </sch:assert>
+</sch:rule>
+\end{lstlisting}
+
+Die XPath-Expression würde prüfen, ob die Summe aller \texttt{TaxAmount}-Elemente gleich \texttt{Tax/TotalAmount} ist. Dies wäre die deterministische Validierung, die LLM-Halluzinationen aufdecken würde.
+
+Im aktuellen Projektstand wird die Korrektheit der Steuerberechnung durch die deterministische Berechnung in der \texttt{CalculateLineItems}-Methode (siehe Listing \ref{lst:tax_calculation}) sichergestellt. Die LLM extrahiert nur die Rohdaten, alle Berechnungen erfolgen im Backend-Code.
