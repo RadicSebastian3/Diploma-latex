@@ -2,7 +2,7 @@
 \chapter{PDF-Textextraktion und OCR-Pipeline}
 \label{chap:pdf_ocr_pipeline}
 
-Die Verarbeitung von Rechnungsdokumenten beginnt mit der Extraktion des Textinhalts. Rechnungen können in zwei fundamentalen Formaten vorliegen: als digitales PDF mit eingebettetem Text oder als gescannte Bilddatei (Rastergrafik). Diese beiden Fälle erfordern völlig unterschiedliche technische Ansätze. Dieses Kapitel beschreibt die Implementierung beider Extraktionspipelines im \textit{SmartBillConverter}.
+Bevor eine Rechnung verarbeitet werden kann, muss ihr Text ausgelesen werden. Dabei gibt es zwei grundlegend verschiedene Fälle: Entweder ist der Text schon digital im PDF gespeichert, oder die Rechnung liegt als Scan vor und der Text muss erst per OCR erkannt werden. Dieses Kapitel zeigt, wie beide Fälle im \textit{SmartBillConverter} technisch umgesetzt wurden.
 
 \section{PDF-Textextraktion mit PdfPig}
 \label{sec:pdf_extraction_implementation}
@@ -12,7 +12,7 @@ Für die Verarbeitung digitaler PDFs wird die Open-Source-Bibliothek \textit{Pdf
 \subsection{PdfExtractionService: Architektur und Interface}
 \label{subsec:pdf_service_architecture}
 
-Der Service folgt dem Interface-Segregation-Prinzip mit einer minimalen Schnittstelle:
+Das Interface des Services ist bewusst einfach gehalten:
 
 \begin{lstlisting}[language={[Sharp]C}, caption={IPdfExtractionService Interface}, label={lst:pdf_interface}]
 public interface IPdfExtractionService
@@ -21,7 +21,7 @@ public interface IPdfExtractionService
 }
 \end{lstlisting}
 
-Das Interface akzeptiert einen \texttt{Stream} statt eines Dateipfads. Dies ermöglicht Flexibilität: Der Stream kann aus einer hochgeladenen Datei (\texttt{IFormFile}), einem Netzwerk-Stream oder einem In-Memory-Buffer kommen. Die Methode ist async, da I/O-Operationen (Stream-Lesen) Non-Blocking durchgeführt werden sollen.
+Als Parameter nimmt das Interface einen \texttt{Stream} statt einem Dateipfad. Das ist praktischer, weil der Stream sowohl von einer hochgeladenen Datei als auch aus einem Speicherpuffer kommen kann. Async ist die Methode, weil das Lesen von Streams eine I/O-Operation ist, die den Server nicht blockieren soll.
 
 Die Implementierung injiziert \texttt{ILogger} für Observability:
 
@@ -71,9 +71,9 @@ public async Task<string> ExtractTextFromPdfAsync(Stream pdfStream)
 }
 \end{lstlisting}
 
-Das \texttt{Position}-Reset ist kritisch: Falls der Controller den Stream bereits zum Validieren gelesen hat, steht der Positionszeiger am Ende. Ohne Reset würde PdfPig ein leeres Dokument sehen. \texttt{CanSeek} prüft, ob der Stream seekable ist (NetworkStreams sind oft non-seekable).
+Das Zurücksetzen der Stream-Position ist wichtig: Wenn der Controller den Stream vorher schon gelesen hat, steht der Lesezeiger am Ende. Ohne Reset sieht PdfPig dann eine leere Datei. \texttt{CanSeek} prüft vorher, ob der Stream überhaupt an eine bestimmte Position springen kann.
 
-Die \texttt{using}-Anweisung stellt sicher, dass das \texttt{PdfDocument} disposed wird und Ressourcen freigegeben werden. PdfPig lädt das gesamte PDF in den Speicher, daher ist die 10MB-Begrenzung im Controller wichtig.\footnote{Vgl. UglyToad: \textit{PdfPig Documentation - Opening Documents}, \url{https://github.com/UglyToad/PdfPig/wiki/Opening-documents}, letzter Zugriff am 06.01.2026}
+Mit \texttt{using} wird sichergestellt, dass das \texttt{PdfDocument} nach der Verarbeitung automatisch aus dem Speicher gelöscht wird. Da PdfPig das ganze Dokument auf einmal lädt, ist das 10MB-Limit im Controller wichtig, damit der Server nicht zu viel RAM verbraucht.\footnote{Vgl. UglyToad: \textit{PdfPig Documentation - Opening Documents}, \url{https://github.com/UglyToad/PdfPig/wiki/Opening-documents}, letzter Zugriff am 06.01.2026}
 
 \subsection{Page-by-Page-Extraktion mit Error-Recovery}
 PDFs können korrumpierte Seiten enthalten. Die Implementierung isoliert Fehler pro Seite:
@@ -224,12 +224,12 @@ if (string.IsNullOrWhiteSpace(result) ||
 }
 \end{lstlisting}
 
-Die Heuristik prüft drei Bedingungen: (1) komplett leer, (2) enthält Error-Marker oder (3) weniger als 50 Zeichen nach Entfernung der Seiten-Header. In diesen Fällen wird ein Demo-Text angefügt. Dies ist für Development/Testing wichtig, da sonst die KI nichts zu verarbeiten hätte. In Produktion sollte hier stattdessen ein OCR-Fallback getriggert werden.
+Die Prüfung schaut auf drei Dinge: Ist der Text komplett leer? Enthält er nur Fehlermeldungen? Oder sind nach dem Herausrechnen der Seiten-Überschriften weniger als 50 Zeichen übrig? Wenn das zutrifft, wird ein Demo-Text angehängt damit die KI trotzdem etwas zum Verarbeiten hat. Im echten Einsatz sollte hier stattdessen OCR gestartet werden.
 
 \section{OCR-Pipeline mit Tesseract}
 \label{sec:ocr_implementation}
 
-Wenn PDFs keine extrahierbare Textebene haben oder Dokumente als Bilder vorliegen, kommt Optical Character Recognition (OCR) zum Einsatz. Das Projekt nutzt \textit{Tesseract}, eine der führenden Open-Source-OCR-Engines.
+Wenn ein PDF keine direkt lesbare Textebene hat oder eine Rechnung als Bilddatei vorliegt, muss OCR das Bild in Text umwandeln. Im Projekt wird dafür \textit{Tesseract} verwendet.
 
 \subsection{OcrExtractionService: Setup und Abhängigkeiten}
 \label{subsec:ocr_service_setup}
@@ -266,7 +266,7 @@ public class OcrExtractionService : IOcrExtractionService
 }
 \end{lstlisting}
 
-Der \texttt{tessDataPath} zeigt auf den Ordner mit \texttt{.traineddata}-Dateien (z.B. \texttt{deu.traineddata}, \texttt{eng.traineddata}). Diese Modelle sind groß (mehrere MB) und müssen separat heruntergeladen werden. Das Projekt enthält ein PowerShell-Script \texttt{download-tessdata.ps1} für den automatischen Download.\footnote{Vgl. Tesseract OCR: \textit{Data Files}, \url{https://github.com/tesseract-ocr/tessdata}, letzter Zugriff am 06.01.2026}
+\texttt{tessDataPath} ist der Pfad zum Ordner mit den Tesseract-Sprachdateien (z.B. \texttt{deu.traineddata} für Deutsch). Diese Dateien sind mehrere MB groß und werden nicht mit dem Projekt mitgeliefert. Im Projekt gibt es das Script \texttt{download-tessdata.ps1}, das sie automatisch herunterlädt.\footnote{Vgl. Tesseract OCR: \textit{Data Files}, \url{https://github.com/tesseract-ocr/tessdata}, letzter Zugriff am 06.01.2026}
 
 Die \texttt{SupportedFormats}-Konstante definiert erlaubte Bildformate. Tesseract kann technisch auch TIFF-Multipage-Dokumente verarbeiten, was für mehrseitige Scans praktisch ist.
 
@@ -305,7 +305,7 @@ public bool IsImageFormatSupported(string fileName)
 }
 \end{lstlisting}
 
-Die Validierung erfolgt über die Dateiendung. Dies ist nicht sicher gegen Manipulation (Umbenennung von \texttt{.exe} zu \texttt{.png}), aber für den Anwendungsfall ausreichend. Eine robustere Lösung würde die Magic Bytes des File-Headers prüfen.
+Die Prüfung läuft über die Dateiendung, was für diesen Anwendungsfall ausreichend ist. Eine sicherere Prüfung würde die ersten Bytes der Datei lesen (sogenannte Magic Bytes).
 
 \subsection{Tesseract Engine-Initialisierung}
 Die eigentliche OCR erfolgt über die Tesseract.NET-Bibliothek:
@@ -361,12 +361,12 @@ public async Task<string> ExtractTextFromImageAsync(
 
 Tesseract.NET benötigt einen Dateipfad, daher muss der Stream in eine temporäre Datei geschrieben werden. \texttt{Path.GetTempFileName()} erstellt eine eindeutige Temp-Datei im System-Temp-Ordner. Der \texttt{finally}-Block stellt sicher, dass diese Datei gelöscht wird (Cleanup).
 
-Die Engine-Parameter:
+Was die Parameter bedeuten:
 \begin{itemize}
-    \item \texttt{deu+eng}: Nutze deutsche und englische Sprachmodelle parallel. Dies verbessert die Erkennung bei gemischten Texten.
-    \item \texttt{EngineMode.Default}: Nutzt LSTM-basiertes neuronales Netz (ab Tesseract 4.0). Alternativen wären \texttt{Legacy} (alte Methode) oder \texttt{TesseractAndLstm} (Hybrid).
-    \item \texttt{tessedit\_char\_whitelist}: Limitiert erkannte Zeichen auf relevante (Zahlen, Buchstaben, Währungen). Dies verhindert, dass Artefakte als exotische Unicode-Zeichen interpretiert werden.
-    \item \texttt{preserve\_interword\_spaces}: Behält Mehrfach-Leerzeichen bei (wichtig für Tabellen-Alignment).
+    \item \texttt{deu+eng}: Tesseract nutzt gleichzeitig die deutschen und englischen Sprachdateien, was bei gemischten Texten bessere Ergebnisse liefert.
+    \item \texttt{EngineMode.Default}: Verwendet das LSTM-Netz aus Tesseract 4.0. Die ältere Methode (\texttt{Legacy}) wäre weniger genau.
+    \item \texttt{tessedit\_char\_whitelist}: Schränkt die erlaubten Zeichen auf Zahlen, Buchstaben und Währungssymbole ein, damit Bildartefakte nicht als zufällige Sonderzeichen erkannt werden.
+    \item \texttt{preserve\_interword\_spaces}: Mehrfache Leerzeichen werden behalten, was für die Ausrichtung von Tabellenspalten wichtig ist.
 \end{itemize}
 
 \subsection{Image-Processing und Confidence-Scoring}
@@ -401,7 +401,7 @@ else
 
 \texttt{Pix} ist das interne Bildformat von Tesseract (aus der Leptonica-Bibliothek). \texttt{LoadFromFile} lädt das Bild und führt automatisch Preprocessing durch (z.B. Binarisierung, wenn ein Graustufen-Bild übergeben wird).
 
-\texttt{GetMeanConfidence()} liefert einen Wert zwischen 0.0 und 1.0, der angibt, wie sicher Tesseract bei der Erkennung ist. Werte unter 0.5 (50\%) deuten auf schlechte Bildqualität oder ein Layout hin, das Tesseract nicht versteht. In Production sollte bei niedriger Confidence eine Warnung an den User ausgegeben werden.\footnote{Vgl. Tesseract Documentation: \textit{Improving Quality}, \url{https://tesseract-ocr.github.io/tessdoc/ImproveQuality.html}, letzter Zugriff am 06.01.2026}
+\texttt{GetMeanConfidence()} gibt einen Wert zwischen 0 und 1 zurück, der zeigt wie sicher Tesseract bei der Erkennung war. Werte unter 0,5 bedeuten, dass das Bild schlecht war oder das Layout Probleme gemacht hat. In einem echten System sollte der Benutzer in solchen Fällen gewarnt werden.\footnote{Vgl. Tesseract Documentation: \textit{Improving Quality}, \url{https://tesseract-ocr.github.io/tessdoc/ImproveQuality.html}, letzter Zugriff am 06.01.2026}
 
 \subsection{Tesseract-Optimierung: Preprocessing und Deskewing}
 Die Erkennungsqualität hängt stark von der Bildqualität ab. Folgende Preprocessing-Schritte sind in Production empfehlenswert (nicht im Projekt implementiert, aber dokumentiert für Erweiterungen):
@@ -520,9 +520,9 @@ public async Task<Invoice> ProcessInvoiceAsync(Stream pdfStream, string fileName
 }
 \end{lstlisting}
 
-Die Decision erfolgt rein auf Basis der Dateiendung. Eine robustere Implementierung würde die Magic Bytes prüfen (PDF beginnt mit \texttt{\%PDF-1.}). 
+Die Entscheidung läuft über die Dateiendung. Sicherer wäre es, die ersten Bytes der Datei zu lesen (ein PDF beginnt immer mit \texttt{\%PDF-1.}), aber für den Projektzweck reicht die Endung.
 
-Ein wichtiges Szenario ist das \textit{gescannte PDF}: Ein PDF, das nur ein eingescanntes Bild enthält, ohne OCR-Layer. Die PDF-Extraktion liefert hier nur leere Strings oder Metadaten. Die Heuristik \texttt{Length < 100} erkennt dies und könnte einen OCR-Fallback triggern. Die Implementierung dafür ist:
+Ein häufiges Problem ist das \textit{gescannte PDF}: Eine Datei, die zwar als PDF vorliegt, aber nur ein eingescanntes Bild enthält ohne lesbaren Text. Die normale PDF-Extraktion gibt dann nur leere Strings zurück.Die Heuristik \texttt{Length < 100} erkennt dies und könnte einen OCR-Fallback triggern. Die Implementierung dafür ist:
 
 \begin{lstlisting}[language={[Sharp]C}, caption={OCR-Fallback fuer gescannte PDFs (Konzept)}, label={lst:ocr_fallback}]
 if (string.IsNullOrWhiteSpace(extractedText) || extractedText.Length < 100)
@@ -546,13 +546,13 @@ if (string.IsNullOrWhiteSpace(extractedText) || extractedText.Length < 100)
 }
 \end{lstlisting}
 
-Die Methode \texttt{ConvertPdfToImages} würde jede PDF-Seite als Rastergrafik rendern (z.B. via \texttt{PdfPig.Rendering} oder \texttt{SkiaSharp}). Dies ist im Projekt nicht implementiert, aber für Production essenziell.
+\texttt{ConvertPdfToImages} würde jede Seite des PDFs in ein Bild umwandeln (z.B. mit \texttt{SkiaSharp}). Das ist im Projekt noch nicht eingebaut, wäre aber für den echten Einsatz sinnvoll.
 
 \section{Performance-Optimierung und Caching}
 \label{sec:performance_optimization}
 
 \subsection{Stream-Reuse vermeiden}
-Ein häufiger Fehler ist, den gleichen Stream mehrfach zu verwenden:
+Ein häufiger Fehler beim Arbeiten mit Streams ist es, denselben Stream zweimal zu lesen:
 
 \begin{lstlisting}[language={[Sharp]C}, caption={Stream-Reuse-Problem}, label={lst:stream_reuse}]
 // FALSCH: Stream wird zweimal gelesen
@@ -568,7 +568,7 @@ Nach dem ersten Lesen steht der Stream-Positionszeiger am Ende. Der zweite Aufru
 \end{itemize}
 
 \subsection{Tesseract-Engine-Pooling}
-Die Initialisierung der \texttt{TesseractEngine} ist teuer (300-500ms). Bei vielen parallelen Requests würde jeder Request eine neue Engine erstellen. Eine Optimierung ist Engine-Pooling:
+Das Erstellen einer neuen \texttt{TesseractEngine} dauert ungefähr 300 bis 500 Millisekunden. Bei vielen gleichzeitigen Anfragen wäre das ein Problem, weil jede Anfrage eine eigene Engine initialisieren müsste. Ein Pool löst das:
 
 \begin{lstlisting}[language={[Sharp]C}, caption={TesseractEngine-Pool (Konzept)}, label={lst:engine_pool}]
 public class TesseractEnginePool

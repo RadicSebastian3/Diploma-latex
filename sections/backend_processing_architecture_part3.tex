@@ -2,7 +2,7 @@
 \chapter{KI-Integration und XML-Generierung}
 \label{chap:llm_xml_generation}
 
-Die Transformation von unstrukturiertem Text in standardkonformes XML ist der technisch anspruchsvollste Teil des \textit{SmartBillConverter}. Dieses Kapitel dokumentiert die Implementierung der Large Language Model (LLM) Integration mit Google Gemini sowie die Generierung von ebInterface 6.1 und ZUGFeRD 2.3 konformen XML-Dokumenten.
+Die Umwandlung von unstrukturiertem Rechnungstext in gültiges XML ist der schwierigste Teil des ganzen Projekts. Dieses Kapitel erklärt, wie die KI-Integration mit Google Gemini konkret umgesetzt wurde, und wie daraus ebInterface 6.1 und ZUGFeRD 2.3 XML-Dateien erzeugt werden.
 
 \section{LLM-Integration mit Gemini API}
 \label{sec:llm_integration}
@@ -32,7 +32,7 @@ public class LlmResponse
 }
 \end{lstlisting}
 
-Die \texttt{LlmResponse} bündelt alle Verarbeitungsergebnisse: das geparste Datenmodell, die generierten XMLs für beide Standards, Validierungsergebnisse und einen Audit-Trail der Verarbeitungsschritte. Dies ermöglicht Debugging und Compliance-Nachweise.
+Die \texttt{LlmResponse}-Klasse fasst alles zusammen, was nach der Verarbeitung bekannt ist: das befüllte Datenmodell, die generierten XML-Texte für beide Standards, eventuelle Validierungsfehler und eine Liste der durchgeführten Schritte. Das ist vor allem beim Debuggen hilfreich.
 
 \subsection{InvoiceData: Das interne Datenmodell}
 Das \texttt{InvoiceData}-POCO (Plain Old CLR Object) ist die Intermediate Representation zwischen LLM-Output und XML-Generierung:
@@ -89,9 +89,9 @@ public class InvoiceItem
 }
 \end{lstlisting}
 
-Das Modell ist bewusst flach gehalten, um die JSON-Serialisierung für das LLM zu vereinfachen. Die separaten Biller/Recipient-Felder ermöglichen einfaches Mapping auf ebInterface (flache Struktur) und ZUGFeRD (verschachtelte Struktur).
+Das Modell ist absichtlich flach aufgebaut, damit das LLM ein einfaches JSON befüllen kann. Die Biller/Recipient-Felder lassen sich dann entweder direkt auf ebInterface oder auf die verschachtelte ZUGFeRD-Struktur abbilden.
 
-Die kritische \texttt{IsNetto}-Property löst ein fundamentales Problem: Rechnungen können Beträge als Netto+MwSt oder als Brutto (inkl. MwSt) angeben. Das LLM muss diese Semantik verstehen und dem Backend mitteilen, damit die Steuerberechnung korrekt erfolgt.
+Die \texttt{IsNetto}-Property löst ein konkretes Problem: Rechnungen können Beträge auf zwei Arten angeben — als Nettobetrag mit Mehrwertsteuer darauf, oder als Bruttobetrag der die Steuer schon enthält. Das LLM muss das erkennen und dem Backend melden, damit die Steuerberechnung stimmt.
 
 \subsection{Prompt Engineering: Der System-Prompt}
 Der Prompt ist das "Programm" für das LLM. Er muss extrem präzise sein, da LLMs zu Halluzinationen neigen:
@@ -137,7 +137,7 @@ Antworte NUR mit validem JSON. Fuege KEINE Erklaerungen hinzu.";
 }
 \end{lstlisting}
 
-Der Prompt ist das Ergebnis von Dutzenden Iterationen. Jede Regel adressiert ein spezifisches Halluzinations-Problem, das in Tests aufgetreten ist. Beispiel: Ohne die Dezimalstellen-Regel interpretierte das LLM "150,00" oft als "15000.00" (fehlende Komma-Konvertierung).
+Der aktuelle Prompt kam erst nach vielen Test-Iterationen zustande. Jede Regel darin löst ein Problem, das bei Tests aufgetaucht ist. Beispiel: Ohne die Dezimalstellen-Regel hat das Modell aus \"150,00\" regelmäßig \"15000.00\" gemacht, weil es das Komma falsch interpretiert hat.
 
 Die \texttt{PriceAnalysis}-Property ist ein Debugging-Feature: Das LLM muss seine Entscheidung begründen. Dies macht Fehler nachvollziehbar und ermöglicht Prompt-Verbesserungen.
 
@@ -218,16 +218,16 @@ public class LlmConversionService : ILlmConversionService
 }
 \end{lstlisting}
 
-Die \texttt{HttpClient}-Injection via Constructor ist Best Practice für Testbarkeit und Connection-Pooling. Der API-Key wird aus Environment Variables geladen (Fail-Fast bei Fehlen).
+Die \texttt{HttpClient}-Injection via Constructor ist wichtig für die Testbarkeit und das Connection-Pooling. Der API-Key kommt aus einer Umgebungsvariable — fehlt er, startet die Anwendung gar nicht erst.
 
-Die \texttt{generationConfig} ist kritisch:
+Die \texttt{generationConfig} bestimmt, wie das Modell antwortet:
 \begin{itemize}
-    \item \texttt{temperature = 0.0}: Maximale Determinismus (keine Kreativität)
-    \item \texttt{response\_mime\_type = "application/json"}: Erzwingt JSON-Output
-    \item \texttt{response\_schema}: Definiert die exakte JSON-Struktur (Type Safety)
+    \item \texttt{temperature = 0.0}: Das Modell ist so deterministisch wie möglich — kein Zufall, keine Kreativität.
+    \item \texttt{response\_mime\_type = "application/json"}: Die Antwort muss immer JSON sein.
+    \item \texttt{response\_schema}: Das Modell kennt genau welche Felder erwartet werden.
 \end{itemize}
 
-Der \texttt{response\_schema}-Parameter nutzt Geminis "Constrained Decoding": Das Modell kann nur Tokens generieren, die dem Schema entsprechen. Dies verhindert syntaktisch invalides JSON.\footnote{Vgl. Google AI: \textit{Gemini API - Structured Output}, \url{https://ai.google.dev/tutorials/structured_output}, letzter Zugriff am 06.01.2026}
+Der \texttt{response\_schema}-Parameter nutzt Geminis \"Constrained Decoding\": Das Modell kann buchstäblich keine Tokens erzeugen, die das JSON-Format verletzen würden.\footnote{Vgl. Google AI: \textit{Gemini API - Structured Output}, \url{https://ai.google.dev/tutorials/structured_output}, letzter Zugriff am 06.01.2026}
 
 \subsection{JSON Schema für Type-Safe Extraction}
 Das JSON-Schema definiert die erwartete Struktur als Machine-Readable Contract:
@@ -340,13 +340,13 @@ private decimal RoundAmount(decimal amount)
 }
 \end{lstlisting}
 
-Die Logik ist mathematisch präzise:
+Die Formeln dahinter sind einfach:
 \begin{itemize}
     \item \textbf{Netto}: $\text{Brutto} = \text{Netto} \times (1 + \frac{\text{Steuersatz}}{100})$
     \item \textbf{Brutto}: $\text{Netto} = \frac{\text{Brutto}}{1 + \frac{\text{Steuersatz}}{100}}$
 \end{itemize}
 
-\texttt{RoundAmount} nutzt \texttt{MidpointRounding.AwayFromZero} (kaufmännisches Runden): 2.125 wird auf 2.13 gerundet, nicht 2.12. Dies ist steuerrechtlich korrekt.\footnote{Vgl. § 16 UStG: \textit{Bemessungsgrundlage}, Rundung auf zwei Nachkommastellen}
+\texttt{RoundAmount} rundet kaufmännisch (\texttt{MidpointRounding.AwayFromZero}): 2,125 wird auf 2,13 gerundet, nicht auf 2,12. Das entspricht den steuerrechtlichen Vorgaben.\footnote{Vgl. § 16 UStG: \textit{Bemessungsgrundlage}, Rundung auf zwei Nachkommastellen}
 
 Das extensive Logging ist Production-Ready: Jede Steuerberechnung ist nachvollziehbar und auditierbar.
 
@@ -452,7 +452,7 @@ private string SerializeToEbInterfaceXml(EbInterfaceInvoice invoice)
 }
 \end{lstlisting}
 
-\texttt{XmlSerializerNamespaces} verhindert Auto-Generated Namespace-Prefixes (xsi, xsd). \texttt{XmlWriterSettings} konfiguriert Formatierung: \texttt{Indent = true} für lesbare XML, \texttt{OmitXmlDeclaration = false} fügt \texttt{<?xml version="1.0"?>} hinzu.
+\texttt{XmlSerializerNamespaces} verhindert, dass der Serializer automatisch unerwünschte Namespace-Präfixe wie xsi und xsd hinzufügt. \texttt{XmlWriterSettings} sorgt für einen lesbaren Einzug und stellt sicher, dass der XML-Header (\texttt{<?xml version="1.0"?>}) oben steht.
 
 \subsection{XSD-Validierung}
 Nach der Serialisierung erfolgt XSD-Validierung gegen das offizielle ebInterface 6.1 Schema:
@@ -496,17 +496,17 @@ private List<string> ValidateAgainstXsd(string xml, string xsdPath)
 
 \texttt{XmlSchemaSet} lädt das XSD-File. \texttt{ValidationEventHandler} sammelt alle Fehler (nicht nur den ersten). Die Methode liest das gesamte XML durch (\texttt{while (xmlReader.Read())}), wodurch alle Validierungen getriggert werden.
 
-Typische Fehler:
+Typische Fehlermeldungen sehen zum Beispiel so aus:
 \begin{itemize}
-    \item Fehlende Pflichtfelder: "Element 'Invoice' missing required child 'InvoiceNumber'"
-    \item Falsches Datumsformat: "Value '01.01.2024' is invalid according to datatype 'date'"
-    \item Ungültige Enum-Werte: "Value 'XYZ' is not valid for attribute 'Currency'"
+    \item Fehlendes Pflichtfeld: \texttt{Element 'Invoice' missing required child 'InvoiceNumber'}
+    \item Falsches Datum: \texttt{Value '01.01.2024' is invalid according to datatype 'date'}
+    \item Ungültiger Wert: \texttt{Value 'XYZ' is not valid for attribute 'Currency'}
 \end{itemize}
 
 \section{ZUGFeRD 2.3 CII-XML-Generierung}
 \label{sec:zugferd_generation}
 
-ZUGFeRD ist strukturell komplexer als ebInterface. Die CII-Syntax (Cross Industry Invoice) ist stark verschachtelt.
+ZUGFeRD ist vom Aufbau her deutlich komplizierter als ebInterface. Die CII-XML-Struktur ist so tief verschachtelt, dass es mehrere Klassen braucht, um einen einfachen Preis zu beschreiben.
 
 \subsection{ZUGFeRD Datenmodell}
 Das Projekt nutzt dedizierte Datenklassen für ZUGFeRD:
@@ -556,7 +556,7 @@ public class ZugferdParty
 Das Modell ist ähnlich zu \texttt{InvoiceData}, aber ZUGFeRD-spezifisch benannt (\texttt{Seller}/\texttt{Buyer} statt Biller/Recipient).
 
 \subsection{CII XML-Struktur mit Namespaces}
-ZUGFeRD nutzt vier XML-Namespaces:
+ZUGFeRD verwendet vier verschiedene XML-Namespaces für verschiedene Teile des Schemas:
 
 \begin{lstlisting}[language={[Sharp]C}, caption={ZUGFeRD Namespaces}, label={lst:zugferd_namespaces}]
 public static class Namespaces
@@ -609,7 +609,7 @@ public class DocumentContextParameterType
 }
 \end{lstlisting}
 
-Die \texttt{GuidelineSpecifiedDocumentContextParameter.ID} deklariert das Profile. Der Wert \texttt{urn:cen.eu:en16931:2017} signalisiert EN 16931-Konformität. Dies ist für B2G (Business-to-Government) Pflicht.\footnote{Vgl. European Commission: \textit{Directive 2014/55/EU on electronic invoicing}, \url{https://ec.europa.eu/digital-building-blocks/wikis/display/DIGITAL/eInvoicing}, letzter Zugriff am 06.01.2026}
+Dieses Feld teilt dem Empfänger mit, welches ZUGFeRD-Profil verwendet wird. Der Wert \texttt{urn:cen.eu:en16931:2017} bedeutet, dass das Dokument der europäischen Norm EN 16931 entspricht, was für Rechnungen an Behörden (B2G) Pflicht ist.\footnote{Vgl. European Commission: \textit{Directive 2014/55/EU on electronic invoicing}, \url{https://ec.europa.eu/digital-building-blocks/wikis/display/DIGITAL/eInvoicing}, letzter Zugriff am 06.01.2026}
 
 \subsection{Komplexe Verschachtelung: SupplyChainTradeTransaction}
 Der CII-Standard ist extrem verschachtelt. Ein Beispiel ist der Preis:
@@ -646,10 +646,10 @@ public class AmountType
 Um einen einfachen Preis zu setzen, muss man vier Objektebenen durchlaufen:
 \texttt{LineItem} → \texttt{SpecifiedLineTradeAgreement} → \texttt{NetPriceProductTradePrice} → \texttt{ChargeAmount.Value}.
 
-Diese Komplexität ist der Preis für UN/CEFACTs "universelles" Modell. Im Projekt wurden Helper-Methoden erstellt, um diese Verschachtelung zu abstrahieren.
+Das ist der Preis für den universellen Ansatz von UN/CEFACT. Um damit besser arbeiten zu können, wurden im Projekt Helper-Methoden angelegt, die die Verschachtelung verbergen.
 
 \subsection{PDF/A-3 Generierung: Mögliche zukünftige Erweiterung}
-ZUGFeRD ist konzeptionell ein hybrides Format: PDF mit eingebettetem XML. Im aktuellen Projektstand wird ausschließlich das XML generiert (siehe \texttt{ZugferdService.GenerateZugferdXmlAsync}). Die vollständige PDF/A-3-Generierung mit eingebettetem XML wurde als mögliche zukünftige Erweiterung evaluiert, aber \textbf{nicht implementiert}.
+ZUGFeRD ist konzeptionell ein hybrides Format: PDF mit eingebettetem XML. Im aktuellen Projektstand wird ausschließlich das XML generiert (siehe \texttt{ZugferdService.GenerateZugferdXmlAsync}). Die vollständige PDF/A-3-Generierung mit eingebettetem XML ist aktuell \textbf{nicht umgesetzt}, wäre aber eine sinnvolle Erweiterung für die Zukunft.
 
 Die theoretische Implementierung würde die Bibliothek \textit{iText7} nutzen. Das folgende Listing zeigt den konzeptionellen Ansatz:
 
@@ -697,7 +697,7 @@ private byte[] GenerateZugferdPdfWithXml(string zugferdXml, string invoiceNumber
 
 \texttt{PdfFileSpec.CreateEmbeddedFileSpec} würde das XML als Attachment einbetten. Der Name \texttt{factur-x.xml} ist konventionell (ZUGFeRD/Factur-X Standard). \texttt{AFRelationship = "Data"} würde das XML als maschinenlesbare Daten kennzeichnen.
 
-Diese Funktionalität wurde im Projekt nicht implementiert. Der aktuelle \texttt{ZugferdService} liefert ausschließlich XML-Strings zurück. Für Production-Systeme wäre die vollständige PDF/A-3-Generierung mit Templates (z.B. Razor Views zu HTML, dann HTML zu PDF via Playwright oder wkhtmltopdf) eine sinnvolle Erweiterung.\footnote{Vgl. iText Software: \textit{iText 7 - PDF/A-3 and attachments}, \url{https://kb.itextpdf.com/home/it7kb/ebooks/itext-7-jump-start-tutorial-for-java/chapter-7-creating-pdfs-with-pdf-a}, letzter Zugriff am 06.01.2026}
+Im Projekt gibt der \texttt{ZugferdService} nur XML als Text zurück, ohne das Einbetten in ein PDF. Für einen echten Produktionseinsatz wäre die vollständige PDF/A-3-Generierung sinnvoll, etwa über Razor-Templates die zuerst zu HTML und dann mit Playwright oder wkhtmltopdf zu PDF gerendert werden.\footnote{Vgl. iText Software: \textit{iText 7 - PDF/A-3 and attachments}, \url{https://kb.itextpdf.com/home/it7kb/ebooks/itext-7-jump-start-tutorial-for-java/chapter-7-creating-pdfs-with-pdf-a}, letzter Zugriff am 06.01.2026}
 
 \section{Validierung und Qualitätssicherung}
 \label{sec:testing_validation}
@@ -709,15 +709,15 @@ Die primäre Validierung erfolgt über XSD-Schemas (siehe Listing \ref{lst:xsd_v
 
 Die Validierung nutzt \texttt{XmlSchemaSet} und \texttt{ValidationEventHandler}, um alle Fehler zu sammeln:
 \begin{itemize}
-    \item Fehlende Pflichtfelder werden als \texttt{XmlSeverityType.Error} gemeldet
-    \item Typ-Mismatchs (z.B. String statt Decimal) führen zu Parsing-Errors
-    \item Namespaces-Fehler werden durch Schema-Abgleich erkannt
+    \item Fehlende Pflichtfelder tauchen als \texttt{XmlSeverityType.Error} auf
+    \item Falsche Datentypen (z.B. ein Text wo eine Dezimalzahl erwartet wird) führen zu Parsing-Fehlern
+    \item Namespace-Probleme werden durch den Schema-Abgleich erkannt
 \end{itemize}
 
-Die \texttt{ValidationErrors}-Liste im \texttt{LlmResponse} gibt dem Frontend detailliertes Feedback für Debugging.
+Die \texttt{ValidationErrors}-Liste in der \texttt{LlmResponse} gibt dem Frontend genaue Infos, was schiefgelaufen ist.
 
 \subsection{Schematron-Validierung: Mögliche zukünftige Erweiterung}
-Während XSD die syntaktische Korrektheit sicherstellt, würde Schematron die semantische Validierung ermöglichen (Business Rules wie BR-S-08). Diese Funktionalität wurde im Projekt \textbf{nicht implementiert}, aber als potenzielle Erweiterung evaluiert.
+Während XSD nur prüft ob die Struktur stimmt, würde Schematron auch inhaltliche Regeln prüfen können (zum Beispiel BR-S-08). Das ist im Projekt \textbf{nicht eingebaut}, wäre aber für einen echten Einsatz sinnvoll.
 
 Der konzeptionelle Ansatz würde XSLT-basierte Schematron-Schemas nutzen:
 

@@ -2,17 +2,17 @@
 \chapter{Backend-Anwendungsstruktur und Controller-Implementierung}
 \label{chap:backend_structure}
 
-Das Backend des \textit{SmartBillConverter} ist als RESTful Web API mit ASP.NET Core 9.0 realisiert. Die Architektur folgt dem Layered-Architecture-Pattern mit klarer Trennung zwischen Präsentationsschicht (Controller), Geschäftslogikschicht (Services) und Datenzugriffsschicht (Repositories). Dieses Kapitel dokumentiert die technische Implementierung der HTTP-Endpunkte, Service-Orchestrierung und Datenbankintegration.
+Das Backend des \textit{SmartBillConverter} ist eine RESTful Web API auf Basis von ASP.NET Core 9.0. Der Aufbau folgt einem klassischen Schichtenmodell: Controller nehmen HTTP-Anfragen entgegen, Services enthalten die eigentliche Logik, und Repositories kümmern sich um den Datenbankzugriff. Dieses Kapitel zeigt, wie die einzelnen Teile technisch umgesetzt wurden.
 
 \section{Controller-Implementierung}
 \label{sec:controller_implementation}
 
-Die Controller-Schicht bildet die HTTP-Schnittstelle der Anwendung. Sie nimmt Requests vom Angular-Frontend entgegen, delegiert die Verarbeitung an Services und formatiert die Responses. Das Projekt umfasst fünf Controller mit klar definierten Verantwortlichkeiten.
+Die Controller sind das Erste, was eine eingehende HTTP-Anfrage sieht. Sie prüfen die Anfrage, leiten die eigentliche Arbeit an die zuständigen Services weiter und schicken das Ergebnis zurück ans Frontend. Im Projekt gibt es fünf Controller, jeder für einen eigenen Aufgabenbereich.
 
 \subsection{ProcessingController: Upload und Verarbeitungs-Orchestrierung}
 \label{subsec:processing_controller}
 
-Der \texttt{ProcessingController} ist das Herzstück der Anwendung. Er orchestriert die gesamte Verarbeitungspipeline vom PDF-Upload bis zur XML-Generierung.
+Der \texttt{ProcessingController} ist der wichtigste Controller im Projekt. Er steuert den gesamten Ablauf von der hochgeladenen PDF-Datei bis zur fertigen XML.
 
 \subsubsection{Struktur und Dependency Injection}
 Der Controller nutzt Constructor Injection für alle Abhängigkeiten:
@@ -74,9 +74,9 @@ public async Task<IActionResult> UploadPdf(IFormFile file)
 }
 \end{lstlisting}
 
-Die Validierung erfolgt dreistufig: (1) Null-Check, (2) Content-Type-Prüfung und (3) Größenlimitierung. Das 10MB-Limit verhindert Out-of-Memory-Exceptions bei großen Dateien. \texttt{IFormFile} ist ASP.NET Cores Abstraktion für hochgeladene Dateien und bietet direkten Stream-Zugriff ohne temporäre Dateien.
+Die Prüfung läuft in drei Schritten: Erst wird geschaut ob eine Datei vorhanden ist, dann ob es wirklich ein PDF ist, und zuletzt ob die Datei nicht größer als 10MB ist. Das Limit ist wichtig damit der Server bei sehr großen Dateien nicht zu viel Speicher braucht. \texttt{IFormFile} ist die ASP.NET-Klasse für hochgeladene Dateien.
 
-Die Methode \texttt{ProcessInvoiceAsync} im \texttt{IInvoiceService} führt die eigentliche Verarbeitung durch (PDF-Extraktion, OCR-Fallback, KI-Konvertierung, Speicherung). Der Controller bleibt damit dünn und fokussiert auf HTTP-Handling.
+Die eigentliche Arbeit macht \texttt{ProcessInvoiceAsync} im \texttt{IInvoiceService}: PDF-Text extrahieren, KI aufrufen, Daten speichern. Der Controller selbst macht nur das Nötigste — die HTTP-Anfrage prüfen und das Ergebnis zurückschicken.
 
 \subsection{InvoiceController: CRUD-Operationen}
 \label{subsec:invoice_controller}
@@ -118,7 +118,7 @@ public class InvoiceController : ControllerBase
 }
 \end{lstlisting}
 
-Die \texttt{[FromQuery]}-Attribute binden URL-Query-Parameter an Methodenparameter. Beispiel: \texttt{GET /api/Invoice/search?year=2024} wird auf \texttt{Search(null, 2024)} gemappt. Der Repository-Pattern abstrahiert die Datenbankzugriffe und ermöglicht einfaches Unit-Testing durch Mock-Repositories.\footnote{Vgl. Fowler, Martin: \textit{Patterns of Enterprise Application Architecture - Repository}, \url{https://martinfowler.com/eaaCatalog/repository.html}, letzter Zugriff am 06.01.2026}
+Das \texttt{[FromQuery]}-Attribut liest URL-Parameter automatisch aus. Beispiel: \texttt{GET /api/Invoice/search?year=2024} wird zu \texttt{Search(null, 2024)}. Das Repository-Pattern verbirgt die Datenbankzugriffe hinter einer Schnittstelle, was das Testen mit Mock-Objekten einfach macht.\footnote{Vgl. Fowler, Martin: \textit{Patterns of Enterprise Application Architecture - Repository}, \url{https://martinfowler.com/eaaCatalog/repository.html}, letzter Zugriff am 06.01.2026}
 
 \subsection{ZugferdController: Hybrides PDF/XML-Format}
 \label{subsec:zugferd_controller}
@@ -152,7 +152,7 @@ public class ZugferdController : ControllerBase
 }
 \end{lstlisting}
 
-Der \texttt{ZugferdService} extrahiert Text aus dem PDF, konvertiert ihn via LLM und generiert ZUGFeRD-kompatibles CII-XML. Die Response enthält das XML direkt als String, den das Frontend als Download anbieten kann.
+Der \texttt{ZugferdService} liest den Text aus dem PDF, schickt ihn an die KI und bekommt ZUGFeRD-konformes CII-XML zurück. Das XML wird direkt als String in der Antwort mitgeschickt, damit das Frontend es als Download anbieten kann.
 
 \subsection{ImageProcessingController: OCR für Scans}
 \label{subsec:image_controller}
@@ -183,7 +183,7 @@ public async Task<IActionResult> ProcessImage(IFormFile imageFile)
 }
 \end{lstlisting}
 
-Die Format-Validierung erfolgt über Dateiendungen. Tesseract unterstützt alle gängigen Bildformate, aber die Qualität hängt stark von der Auflösung ab (optimal: 300 DPI). Der zweistufige Prozess (OCR → LLM) ermöglicht Fehlerkorrektur durch die KI.
+Die Prüfung läuft über die Dateiendung. Tesseract kann alle gängigen Bildformate verarbeiten, aber die Erkennungsqualität hängt stark von der Auflösung ab (optimal sind 300 DPI). Der zweistufige Ablauf OCR → KI hilft dabei, OCR-Fehler im zweiten Schritt noch zu korrigieren.
 
 \subsection{DownloadController: XML-Datei-Export}
 \label{subsec:download_controller}
@@ -214,7 +214,7 @@ Die \texttt{File()}-Methode setzt automatisch den \texttt{Content-Disposition: a
 \section{Service-Layer Architektur}
 \label{sec:service_layer}
 
-Die Service-Schicht enthält die Geschäftslogik und orchestriert komplexe Workflows. Services sind Scoped (eine Instanz pro Request) und werden via Interfaces injected.
+Services enthalten die eigentliche Programmlogik. Jeder Service wird als Scoped registriert, das heißt pro HTTP-Request entsteht eine eigene Instanz und wird danach wieder aufgeräumt.
 
 \subsection{Interface-basierte Abstraktion}
 Alle Services sind über Interfaces definiert, was Dependency Inversion ermöglicht:
@@ -243,7 +243,7 @@ public interface ILlmConversionService
 }
 \end{lstlisting}
 
-Diese Abstraktion ermöglicht einfaches Austauschen von Implementierungen (z.B. Wechsel von Gemini zu GPT-4) ohne Controller-Änderungen. Interfaces sind auch essenziell für Unit-Tests mit Mocking-Frameworks wie Moq.
+Weil alle Services über Interfaces angesprochen werden, kann man die konkrete Implementierung jederzeit austauschen — zum Beispiel von Gemini auf GPT-4 wechseln — ohne den Controller ändern zu müssen. Das ist auch für Tests nützlich, weil man Interfaces durch einfache Mock-Objekte ersetzen kann.
 
 \subsection{Service-Registrierung in Program.cs}
 Die Services werden im Dependency Injection Container registriert:
@@ -263,7 +263,7 @@ builder.Services.AddHttpClient<ILlmConversionService, LlmConversionService>()
     .SetHandlerLifetime(TimeSpan.FromMinutes(5));
 \end{lstlisting}
 
-\texttt{AddScoped} bedeutet: Pro HTTP-Request wird eine neue Service-Instanz erstellt und nach Request-Ende disposed. Dies ist wichtig für Thread-Safety. \texttt{AddHttpClient} registriert einen \texttt{HttpClient} speziell für den \texttt{LlmConversionService} mit Connection-Pooling und Timeout-Management.\footnote{Vgl. Microsoft: \textit{Make HTTP requests using IHttpClientFactory}, \url{https://learn.microsoft.com/en-us/dotnet/core/extensions/httpclient-factory}, letzter Zugriff am 06.01.2026}
+\texttt{AddScoped} heißt: Pro HTTP-Request wird eine neue Instanz erstellt und am Ende wieder gelöscht. \texttt{AddHttpClient} meldet den \texttt{HttpClient} für den \texttt{LlmConversionService} an, was automatisch Connection-Pooling und Timeout-Verwaltung mitbringt.\footnote{Vgl. Microsoft: \textit{Make HTTP requests using IHttpClientFactory}, \url{https://learn.microsoft.com/en-us/dotnet/core/extensions/httpclient-factory}, letzter Zugriff am 06.01.2026}
 
 \subsection{InvoiceService: Orchestrierung der Pipeline}
 Der \texttt{InvoiceService} koordiniert alle Verarbeitungsschritte:
@@ -303,7 +303,7 @@ public class InvoiceService : IInvoiceService
 }
 \end{lstlisting}
 
-Die Pipeline ist linear: PDF → Text → LLM → DB. Logging nach jedem Schritt ermöglicht Debugging. Die \texttt{MapToInvoice}-Methode konvertiert das LLM-Response-Objekt in die Entity-Framework-Entität.
+Der Ablauf ist gradlinig: PDF rein, Text extrahieren, KI aufrufen, in der Datenbank speichern. Nach jedem Schritt wird geloggt, damit man beim Debuggen nachvollziehen kann, wo etwas schiefgelaufen ist. \texttt{MapToInvoice} überführt die KI-Antwort in das Entity-Framework-Objekt.
 
 \section{Repository Pattern und Datenzugriff}
 \label{sec:repository_pattern}
@@ -404,7 +404,7 @@ public class ApplicationDbContext : DbContext
 }
 \end{lstlisting}
 
-\texttt{HasPrecision(14, 2)} definiert Dezimalgenauigkeit (14 Stellen, 2 Nachkommastellen) für Geldbeträge. Indizes auf \texttt{InvoiceNumber} und \texttt{Year} beschleunigen Suchqueries. Die Konfiguration wird in Migrations übersetzt.\footnote{Vgl. Microsoft: \textit{Entity Framework Core Documentation}, \url{https://learn.microsoft.com/en-us/ef/core/}, letzter Zugriff am 06.01.2026}
+\texttt{HasPrecision(14, 2)} legt fest, dass Geldbeträge mit 14 Stellen und 2 Nachkommastellen gespeichert werden. Indizes auf \texttt{InvoiceNumber} und \texttt{Year} machen Suchanfragen schneller. Alle Einstellungen werden bei der nächsten Migration in Datenbankbefehle übersetzt.\footnote{Vgl. Microsoft: \textit{Entity Framework Core Documentation}, \url{https://learn.microsoft.com/en-us/ef/core/}, letzter Zugriff am 06.01.2026}
 
 \subsection{Invoice Entity-Modell}
 Die \texttt{Invoice}-Entität repräsentiert eine Rechnung in der Datenbank:
@@ -443,7 +443,7 @@ public class Invoice
 }
 \end{lstlisting}
 
-\texttt{[NotMapped]}-Properties werden nicht in der Datenbank gespeichert, sondern nur für API-Responses verwendet. \texttt{MaxLength} definiert VARCHAR-Längen. \texttt{IBAN} ist maximal 34 Zeichen (IBAN-Standard).
+Properties mit \texttt{[NotMapped]} werden nicht in der Datenbank angelegt — sie sind nur im C\#-Objekt vorhanden, damit sie in der API-Antwort mitgeschickt werden können. \texttt{MaxLength} bestimmt die Länge der VARCHAR-Felder. IBANs sind nach Standard maximal 34 Zeichen lang.
 
 \section{Konfiguration und Secrets Management}
 \label{sec:configuration}
@@ -565,7 +565,7 @@ public async Task<IActionResult> UploadPdf(IFormFile file)
 }
 \end{lstlisting}
 
-Spezifische Exceptions (\texttt{InvalidOperationException}) werden zuerst gefangen und geben dem User hilfreiches Feedback. Generische \texttt{Exception} fängt alles andere. \texttt{StatusCode(500)} signalisiert Server-Fehler (HTTP 500 Internal Server Error).
+Bekannte Fehler wie \texttt{InvalidOperationException} werden zuerst abgefangen und dem Benutzer mit einer verständlichen Nachricht angezeigt. Der zweite \texttt{catch}-Block fängt alle anderen unerwarteten Fehler. HTTP-Status 500 bedeutet, dass der Server selbst einen Fehler hatte.
 
 \subsection{Strukturiertes Logging mit ILogger}
 ASP.NET Cores \texttt{ILogger} bietet strukturiertes Logging:
@@ -603,7 +603,7 @@ public async Task<string> ExtractTextFromPdfAsync(Stream pdfStream)
 }
 \end{lstlisting}
 
-Die geschweiften Klammern \texttt{\{PageCount\}} sind Platzhalter für strukturierte Properties. Log-Aggregation-Tools (Seq, Elasticsearch) können diese Properties filtern und aggregieren. \texttt{LogError} inkludiert den Stack-Trace.\footnote{Vgl. Microsoft: \textit{Logging in .NET Core and ASP.NET Core}, \url{https://learn.microsoft.com/en-us/aspnet/core/fundamentals/logging/}, letzter Zugriff am 06.01.2026}
+Die geschweiften Klammern wie \texttt{\{PageCount\}} sind Platzhalter für Werte, die beim Ausführen eingesetzt werden. So können die Logs später nach bestimmten Werten durchsucht werden. \texttt{LogError} schreibt automatisch auch den Stack-Trace mit, was bei der Fehlersuche sehr nützlich ist.\footnote{Vgl. Microsoft: \textit{Logging in .NET Core and ASP.NET Core}, \url{https://learn.microsoft.com/en-us/aspnet/core/fundamentals/logging/}, letzter Zugriff am 06.01.2026}
 
 \subsection{HTTP-Statuscodes und Best Practices}
 Die Anwendung nutzt semantische HTTP-Statuscodes:
