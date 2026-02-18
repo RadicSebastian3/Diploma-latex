@@ -1,20 +1,20 @@
 \chapter{E-Rechnungsstandards und Compliance}
 \label{chap:standards_compliance}
 
-Die Umstellung der Dokumente aus Papier auf digitale Dateien ist ein großer Bestandteil der modernen IT-Wirtschaft. Eine wichtige Rolle spielt dabei die elektronische Rechnung, auch bekannt als E-Rechnung. Im Vergleich zu einer simplen PDF-Datei ist sie nicht nur ein digitalisiertes Papierdokument sondern eine Datei mit strukturierten Daten. Diese Daten können ohne menschliches eingreifen automatisch verarbeitet, verbucht und geprüft werden.
+Nicht jede digitale Datei, die eine Rechnung darstellt, ist auch wirklich eine elektronische Rechnung im rechtlichen und technischen Sinne. Ein eingescanntes Papier oder ein aus Word exportiertes PDF ist zwar für Menschen lesbar, für Software aber nur ein Bild ohne strukturierten Inhalt. Erst wenn die Rechnungsdaten in einem maschinenlesbaren Format vorliegen, kann eine Software wie der \textit{SmartBillConverter} diese automatisch verarbeiten.
 
-In diesem Kapitel werden die theoretischen Grundlagen und spezifischen Standards behandelt, die für die Entwicklung des \textit{SmartBillConverter} wichtig sind. Der Fokus liegt dabei auf dem österreichischen Standard \textit{ebInterface} und dem deutsch-europäischen Hybridformat \textit{ZUGFeRD}, integriert in den Kontext der europäischen Norm EN 16931.
+Dieses Kapitel erklärt die zwei für das Projekt wichtigen XML-basierten E-Rechnungsstandards — das österreichische \textit{ebInterface 6.1} und das deutsche Hybridformat \textit{ZUGFeRD 2.3} — sowie deren Bezug zur europäischen Norm EN 16931. Beide Standards lösen das gleiche Problem auf unterschiedliche Weise und haben dabei jeweils eigene Stärken und Schwächen.
 
 \section{ebInterface 6.1 (Österreich)}
 \label{sec:ebinterface}
 
 \subsection{Zweck und Historie}
-EbInterface ist der offizielle österreichische Standard für die elektronische Rechnungsstellung. Die Entwicklung wurde von AUSTRIAPRO einer Initiative der Wirtschaftskammer Österreich WKO entworfen. Ziel war es den Datenaustausch zwischen Unternehmen sowie zwischen Unternehmen und Behörden einheitlich zu regeln. Bereits in den frühen 2000er Jahren begann die Entwicklung von ebInterface und wurde über mehrere Versionen hinweg fortgeführt von 4.0 über 5.0 und 6.0 bis zur aktuellen Version 6.1.
+Unter der Trägerschaft der AUSTRIAPRO, einer Serviceeinrichtung der Wirtschaftskammer Österreich (WKO), entstand ebInterface als nationale Antwort auf die wachsende Nachfrage nach einem einheitlichen, XML-basierten Rechnungsaustausch. Der Entwicklungsbeginn in den frühen 2000er-Jahren spiegelte eine strukturelle Lücke wider: Während Großkonzerne auf komplexe EDI-Systeme zurückgreifen konnten, fehlte kleinen und mittleren Unternehmen ein zugängliches, breit akzeptiertes Dateiformat. Über aufeinanderfolgende Versionen (4.0, 5.0, 6.0) wurde das Schema bis zur gegenwärtig verbindlichen Version 6.1 weiterentwickelt.
 
-Das Anwendungsgebiet von ebInterface ist, dass verschiedene Computersysteme problemlos miteinander arbeiten können. Große Industrieunternehmen haben lange Zeit eigene komplexe Standards für elektronischen Datenaustausch verwendet, während es für kleine und mittlere Unternehmen kein unkompliziertes Format gab, das leicht genutzt werden konnte. Diese Lücke wird durch ebInterface geschlossen. Mit dem Jahr 2014 kam in Österreich die Verpflichtung, Rechnungen an den Staat elektronisch zu übermitteln, dadurch wurde die Nutzung von ebInterface deutlich gefördert. Über das Unternehmensserviceportal USP müssen Rechnungen an den Staat eingereicht werden und ebInterface wird als Standardformat akzeptiert.\footnote{Vgl. AUSTRIAPRO: \textit{ebInterface - Der österreichische Standard für die elektronische Rechnung}, \url{https://www.ebinterface.at/}, letzter Zugriff am 19.12.2025}
+Einen entscheidenden Verbreitungsschub erlebte ebInterface im Jahr 2014, als die verpflichtende elektronische Rechnungslegung gegenüber österreichischen Behörden gesetzlich verankert wurde. Seitdem ist ebInterface die Pflichtgrundlage für alle Rechnungen, die über das Unternehmensserviceportal (USP) eingereicht werden, was dazu geführt hat, dass das Format auch außerhalb des öffentlichen Sektors immer weiter verbreitet ist.\footnote{Vgl. AUSTRIAPRO: \textit{ebInterface - Der österreichische Standard für die elektronische Rechnung}, \url{https://www.ebinterface.at/}, letzter Zugriff am 19.12.2025}
 
 \subsection{Kernelemente und Struktur}
-Technisch gesehen ist ebInterface eine Datei im XML-Format. Im Vergleich zu ZUGFeRD existiert keine integrierte PDF-Datei, sondern die XML-Datei selbst ist die Rechnung, daher wird zum Beispiel für eine manuelle Prüfung durch einen Mitarbeiter ein besonderes Anzeigeprogramm oder eine Formatvorlage (XSLT/Stylesheet) benötigt.
+Im Gegensatz zu ZUGFeRD enthält eine ebInterface-Datei kein lesbares PDF-Layout — sie ist ausschließlich eine XML-Datei mit den Rechnungsdaten. Wer eine ebInterface-Rechnung mit eigenen Augen lesen will, braucht entweder einen speziellen Viewer oder muss sie zuerst mit XSLT in ein lesbares Format umwandeln.
 
 Die Struktur einer ebInterface 6.1 Datei ist hierarchisch aufgebaut und besteht aus folgenden Hauptbereichen:
 \begin{itemize}
@@ -39,7 +39,7 @@ Die Gültigkeit einer ebInterface-Rechnung wird durch ein XML Schema (XSD) defin
     \item UID-Nummer des Rechnungsstellers (und ab 10.000 Euro Brutto auch des Empfängers).
 \end{itemize}
 
-Eine Eigenheit von ebInterface 6.1 ist die strikte Festlegung der Datentypen. Datumsfelder müssen dem ISO 8601 Format erfolgen, Beträge werden als Dezimalzahlen mit definierter Genauigkeit angegeben. Dies verhindert Missverständnisse und Fehler, die bei OCR-basierten Verarbeitung häufig auftreten.
+Auffällig bei ebInterface 6.1 ist die strenge Typ-Prüfung: Datumsfelder akzeptieren nur das ISO-8601-Format, Betragsfelder müssen Dezimalzahlen sein. Das ist bei der automatischen Generierung durch KI sehr nützlich, weil Fehler wie ein falsch formatiertes Datum (z.B. TT.MM.JJJJ statt JJJJ-MM-TT) sofort als XSD-Validierungsfehler auffallen, statt unbemerkt falsche Werte in die Rechnung einzubauen.
 
 \subsection{Beispielhafte XML-Struktur}
 Um die Struktur zu veranschaulichen, zeigt das folgende Beispiel einen gekürzten Ausschnitt einer validen ebInterface 6.1 Rechnung. Man erkennt deutlich die hierarchische Gliederung und die aussagekräftigen Tag-Namen, die eine Umsetzung erleichtern.
@@ -86,20 +86,20 @@ Um die Struktur zu veranschaulichen, zeigt das folgende Beispiel einen gekürzte
 </Invoice>
 \end{lstlisting}
 
-Dieses Beispiel zeigt, wie wichtig die korrekte Verschachtelung ist. Ein häufiger Fehler bei der Generierung passiert, wenn die berechneten Zeilensummen (\texttt{LineItemAmount}) nicht mit den Steuerbeträgen im \texttt{Tax}-Block übereinstimmen.
+Was an diesem Beispiel auffällt: Die Einzelpositionen im \texttt{Details}-Block und die Steuerberechnung im \texttt{Tax}-Block müssen rechnerisch übereinstimmen. Genau das ist bei der KI-basierten Generierung das häufigste Problem, weil LLMs solche Berechnungen nicht zuverlässig selbst durchführen.
 
 \section{ZUGFeRD 2.3 und EN 16931 (Deutschland/EU)}
 \label{sec:zugferd}
 
 \subsection{Das hybride Konzept}
-ZUGFeRD (Zentraler User Guide des Forums elektronische Rechnung Deutschland) verfolgt ein anderes Prinzip als ebInterface. Es handelt sich um ein hybrides Format, welches sowohl für den Menschen gut lesbar ist als auch einfache Verarbeitbarkeit für Computersysteme kombiniert. Eine ZUGFeRD-Rechnung ist technisch gesehen eine PDF/A-3 Datei, in der die strukturierten Rechnungsdaten eingebettet sind.
+ZUGFeRD, entwickelt vom \textit{Forum elektronische Rechnung Deutschland (FeRD)}, funktioniert ganz anders als reine XML-Formate wie ebInterface. Statt einer eigenständigen XML-Datei wird eine ganz normale PDF-Rechnung erstellt, in die die XML-Daten unsichtbar eingebettet werden. Technisch gesehen ist das eine PDF/A-3-Datei, die eine XML-Datei (meistens \texttt{factur-x.xml} oder \texttt{zugferd-invoice.xml}) als versteckten Anhang enthält.
 
-PDF/A-3 ist eine Erweiterung des PDF-Standards, die es ermöglicht, beliebige Dateien als Anhang in das PDF einzubetten. Bei ZUGFeRD wird eine XML-Datei (genannt \texttt{factur-x.xml} oder \texttt{zugferd-invoice.xml}) direkt in das PDF eingebettet. 
+Durch diese Dualität entsteht ein Format mit zwei unabhängig nutzbaren Informationsschichten:
 \begin{itemize}
-    \item \textbf{Sichtbare Ebene}: Das PDF zeigt das die Rechnung, wie man es von einer Papier-Rechnung kennt.
-    \item \textbf{Unsichtbare Ebene}: Das eingebettete XML beinhaltet die gleichen Daten in strukturierter Form.
+    \item \textbf{Visuelle Ebene}: Das PDF-Rendering entspricht dem gewohnten Rechnungslayout und ist ohne Spezialsoftware lesbar.
+    \item \textbf{Strukturierte Datenschicht}: Das eingebettete XML liefert dieselben Informationen in maschinenverarbeitbarer Form.
 \end{itemize}
-Dieses Konzept löst das Akzeptanzproblem bei kleineren Empfängern: Wer keine Software zur automatischen Verarbeitung hat, kann die Datei wie ein normales PDF verwenden. Wer die Daten automatisch verarbeiten möchte, extrahiert das XML.
+Diese Architekturentscheidung löst ein in der Praxis häufig auftretendes Akzeptanzproblem: Empfänger ohne automatisierte Verarbeitungsinfrastruktur behandeln ZUGFeRD-Dokumente schlicht als gewöhnliche PDFs, während systemseitig die XML-Nutzlast selektiv extrahiert und weiterverarbeitet werden kann.
 
 \subsection{Profile und Konformität}
 ZUGFeRD 2.3 setzt die europäische Norm EN 16931 um. Da die Anforderungen je nach Unternehmensgröße und Branche variieren, definiert ZUGFeRD verschiedene Profile:
@@ -113,7 +113,7 @@ ZUGFeRD 2.3 setzt die europäische Norm EN 16931 um. Da die Anforderungen je nac
 \end{enumerate}
 
 \subsection{CII-Struktur (Cross Industry Invoice)}
-Das XML-Format von ZUGFeRD basiert auf der \textit{Cross Industry Invoice} (CII) Syntax der UN/CEFACT, einem internationalen Standard für Lieferketten-Daten. Die Struktur ist extrem detailliert und tief verschachtelt. Ein einfacher Preis ist nicht nur eine Zahl, sondern ein komplexes Objekt welches Betrag, Währung, Basismenge und Einheitencode enthält.
+Für die XML-Struktur verwendet ZUGFeRD das \textit{Cross Industry Invoice} (CII) Schema der UN/CEFACT. Dieser Standard wurde eigentlich für komplexe globale Lieferketten entwickelt und ist daher für eine einfache Rechnung deutlich umfangreicher als nötig. Ein gutes Beispiel: Ein einfacher Einzelpreis ist in CII kein einfacher Zahlenwert, sondern ein ganzes Objekt mit Betrag, Währung, Basismenge und Einheitencode als separate Felder.
 
 Beispielhafte Verschachtelung in CII:
 \texttt{SupplyChainTradeTransaction} $\rightarrow$ \texttt{IncludedSupplyChainTradeLineItem} $\rightarrow$ \texttt{SpecifiedLineTradeAgreement} $\rightarrow$ \texttt{NetPriceProductTradePrice} $\rightarrow$ \texttt{ChargeAmount}.
@@ -151,11 +151,10 @@ Das folgende Beispiel stellt ein Ausschnitt einer ZUGFeRD-XML dar, der die Kompl
 \section{UBL vs. CII: Mapping-Überlegungen und Trade-offs}
 \label{sec:ubl_cii}
 
-Die europäische Norm EN 16931 erlaubt zwei XML-Syntaxen: UBL (Universal Business Language) und UN/CEFACT CII. Während Netzwerke wie Peppol (Pan-European Public Procurement OnLine) historisch stark auf UBL (ISO/IEC 19845) setzen, verwendet das Forum elektronische Rechnung Deutschland (FeRD) bei ZUGFeRD die CII-Syntax.
+Interessant ist, dass die Norm EN 16931 zwei völlig unterschiedliche XML-Formate als gleichwertig anerkennt: UBL (ISO/IEC 19845) und UN/CEFACT CII. Das liegt daran, dass verschiedene Länder und Netzwerke unterschiedliche Präferenzen haben. Peppol, das europaweite E-Procurement-Netzwerk, nutzt hauptsächlich UBL, während ZUGFeRD auf CII basiert. Das führt dazu, dass es in Europa kein einheitliches Format gibt.
 
 \subsection{Strukturelle Unterschiede}
-\textbf{UBL} ist dokumentenzentriert. Es gibt eigene seperate Schemas für \texttt{Order}, \texttt{Invoice}, \texttt{DespatchAdvice}. Die Struktur ist oft kompakter aufgebaut und übersichtlicher.
-\textbf{CII} ist prozesszentriert und bildet alle Aspekte der Lieferkette in einem universellen Modell ab. Dies führt zu einer stärkeren Zusammenfassung komplexer Informationen und Verschachtelung.
+\textbf{UBL} hat für jeden Dokumenttyp ein eigenes Schema: eines für Bestellungen (\texttt{Order}), eines für Rechnungen (\texttt{Invoice}), eines für Lieferscheine (\texttt{DespatchAdvice}) usw. Das macht die Struktur übersichtlich und relativ einfach zu lesen. \textbf{CII} hingegen versucht alle möglichen Geschäftsprozesse in einem einzigen Schema abzubilden, wobei eine Rechnung dann nur ein Sonderfall von Lieferkettenoperationen ist. Das macht CII mächtiger, aber auch deutlich komplizierter.
 
 Ein konkretes Beispiel ist die Handhabung von Steuern:
 \begin{itemize}
@@ -164,9 +163,9 @@ Ein konkretes Beispiel ist die Handhabung von Steuern:
 \end{itemize}
 
 \subsection{Herausforderungen für den Konverter}
-Für den \textit{SmartBillConverter} bedeutet dies, dass das interne Datenmodell (das C\# \texttt{Invoice}-Objekt) als neutrale "Intermediate Representation" dienen muss. Es darf nicht zu stark an ebInterface gekoppelt sein, da sonst das Mapping auf CII extrem kompliziert und aufwändig wird.
-Das direkte Mapping von ebInterface (XML) auf ZUGFeRD (CII) ist nicht wichitg, da die semantischen Strukturen unterschiedlich sind. ebInterface gruppiert oft logisch (z.B. "Biller"), während sich CII funktional sammelt (z.B. "SupplyChainTradeTransaction").
-Deshalb ist es notwendig, eine eigene interne Datenstruktur zu verwenden, welche von der künstlichen Intelligenz befüllt und danach in beide Formate transformiert werden kann.
+Für den \textit{SmartBillConverter} bedeutet das eine wichtige Anforderung: Das interne Datenmodell darf nicht zu eng an ebInterface angelehnt sein, weil sonst die Umwandlung nach CII sehr schwierig wird. ebInterface fasst zum Beispiel alle Rechnungsstellerdaten unter einem einzigen \textit{Biller}-Element zusammen, während CII die gleichen Daten auf viele Container wie \textit{SupplyChainTradeTransaction} verteilt. Ein direktes Mapping von ebInterface auf CII würde zu sehr unübersichtlichem Code führen.
+
+Die Lösung war, ein eigenes internes C\#-Objekt als Zwischenschritt zu verwenden. Die KI befüllt dieses Objekt mit den extrahierten Daten, und danach wird es von separaten Klassen in das jeweilige Zielformat (ebInterface oder ZUGFeRD) umgewandelt.
 Tabelle \ref{tab:format_comparison} fasst die bedeutenden Unterschiede zusammen, die bei der Umsetzung beachtet wurden.
 
 \begin{table}[h]
@@ -194,44 +193,43 @@ Tabelle \ref{tab:format_comparison} fasst die bedeutenden Unterschiede zusammen,
 \section{XSD-Validierung vs. Geschäftsregeln (BR-S-08 etc.)}
 \label{sec:validation}
 
-Die Qualitätssicherung einer generierten E-Rechnung erfolgt in zwei Stufen. Ein Dokument kann technisch valide sein, aber inhaltlich falsch.
+Ein XML-Dokument kann technisch korrekt aufgebaut sein und trotzdem falsche Inhalte haben. Gerade bei der automatischen Generierung durch KI ist das ein häufiges Problem. Im \textit{SmartBillConverter} werden deshalb beide Arten von Fehlern getrennt geprüft.
 
 \subsection{Syntaktische Validierung (XSD)}
-Die XML Schema Definition (XSD) prüft die Grammatik der Datei.
+Das XSD (XML Schema Definition) des jeweiligen Standards beschreibt genau, wie das XML aufgebaut sein muss. Es legt fest, welche Felder vorhanden sein müssen, in welcher Reihenfolge sie kommen dürfen und welchen Datentyp sie haben sollen. Typische Prüfpunkte sind:
 \begin{itemize}
-    \item Sind alle Pflicht-Tags vorhanden?
-    \item Haben Datumsfelder das Format YYYY-MM-DD?
-    \item Sind numerische Werte korrekt formatiert?
-    \item Stimmt die Reihenfolge der Elemente? (Besonders in CII ist die Reihenfolge strikt vorgegeben).
+    \item Vollständigkeit der obligatorischen Felder?
+    \item Korrektheit des Datumsformats (strikt ISO 8601: YYYY-MM-DD)?
+    \item Numerische Typen ohne unerlaubte String-Repräsentationen?
+    \item Einhaltung der Elementreihenfolge \textemdash{} insbesondere CII toleriert keinerlei Abweichungen.
 \end{itemize}
-Ein Verstoß gegen das XSD führt dazu, dass die Datei vom Empfängersystem meist gar nicht erst eingelesen werden kann ("Technical Rejection").
+Ein Dokument, das diesen syntaktischen Vertrag verletzt, wird von konformen Empfangssystemen in aller Regel bereits beim Einlesen verworfen, ohne dass eine inhaltliche Prüfung auch nur beginnt.
 
 \subsection{Semantische Validierung (Business Rules)}
-Selbst wenn das XML wohlgeformt ist, kann der Inhalt unlogisch sein. Die EN 16931 definiert daher eine Liste von Geschäftsregeln (Business Rules), die eingehalten werden müssen. Diese werden oft mittels \textit{Schematron} geprüft.
+Nur weil das XML technisch korrekt aufgebaut ist, heißt das noch nicht, dass die Inhalte auch stimmen. Deshalb legt die Norm EN 16931 zusätzlich eine Liste von Geschäftsregeln fest, die sicherstellen sollen, dass die Beträge und Steuern rechnerisch korrekt und widerspruchsfrei sind. Diese Regeln werden meistens mit \textit{Schematron} geprüft.
 
 Ein prominentes und im Projektverlauf problematisches Beispiel ist die Regel \textbf{BR-S-08} (Value Added Tax Breakdown).
 Diese Regel besagt: \textit{Für jeden unterschiedlichen Steuercode und Steuersatz, der in den Rechnungspositionen verwendet wird, muss genau eine Zusammenfassung auf Dokumentenebene existieren, und die Summe der Steuerbeträge muss rechnerisch korrekt sein.}
 
-Das Problem bei der Generierung durch KI (LLMs) ist, dass LLMs statistische Modelle sind, keine Taschenrechner. Ein LLM kann problemlos schreiben:
+Das Problem bei der Generierung durch KI ist, dass LLMs keine Taschenrechner sind. Sie schätzen auf Basis von Wahrscheinlichkeiten den nächsten Token, anstatt wirklich zu rechnen. In der Praxis heißt das: Ein LLM kann eine plausibel aussehende, aber falsche Steuersumme ausgeben, weil es den Wert errät statt ihn zu berechnen:
 \begin{itemize}
     \item Position 1: 100 Euro, 20\% MwSt
     \item Position 2: 200 Euro, 20\% MwSt
     \item Steuer-Summe: 55 Euro (statt korrekt 60 Euro)
 \end{itemize}
 Das LLM "schätzt" oder "halluziniert" die Summe oft, anstatt sie zu berechnen.
-Daher darf die Berechnung der Summen und Steuern \textbf{niemals} der KI überlassen werden. Die KI extrahiert die Einzelwerte (Menge, Preis, Steuersatz), aber die Aggregation und die Erstellung des \texttt{TaxBreakdown} für die Regel BR-S-08 muss durch deterministische Algorithmen im Backend (C\#) erfolgen. Nur so kann die Validierung gegen Schematron-Regeln bestanden werden.\footnote{Vgl. CEN - European Committee for Standardization: \textit{EN 16931-1:2017 Electronic invoicing - Semantic data model}, \url{https://standards.cen.eu/dyn/www/f?p=204:110:0::::FSP_PROJECT:60602&cs=1B61B766636F9FB34B7DBD72CE9026C72}, letzter Zugriff am 19.12.2025}
+Deshalb wurde im \textit{SmartBillConverter} eine klare Aufgabenteilung eingebaut: Die KI liefert nur die Einzelwerte (Einzelbeträge, Steuersätze, Mengen), während alle Summen, Rundungen und Steuerberechnungen fest im C\#-Backend berechnet werden. Nur so kann sichergestellt werden, dass die Regel BR-S-08 immer korrekt eingehalten wird.\footnote{Vgl. CEN - European Committee for Standardization: \textit{EN 16931-1:2017 Electronic invoicing - Semantic data model}, \url{https://standards.cen.eu/dyn/www/f?p=204:110:0::::FSP_PROJECT:60602&cs=1B61B766636F9FB34B7DBD72CE9026C72}, letzter Zugriff am 19.12.2025}
 
 \chapter{Dokumentenverarbeitung und KI-Grundlagen}
 \label{chap:doc_processing_ai}
 
-Die automatisierte Verarbeitung von Rechnungen ist ein klassisches Problem der Informatik, das durch moderne KI-Ansätze neu gelöst wird. Traditionelle Ansätze basierten auf Templates (Schablonen), bei denen für jeden Lieferanten definiert wurde, an welchen Koordinaten die Rechnungsnummer steht. Dieser Ansatz ist jedoch fragil und skaliert nicht. Der \textit{SmartBillConverter} setzt daher auf einen generischen Ansatz mittels Large Language Models (LLMs). Dieses Kapitel beleuchtet die technologischen Grundlagen.
+Die automatische Verarbeitung von Rechnungen ist ein altbekanntes Problem. Frühere Systeme haben meistens mit Templates gearbeitet: Für jeden Lieferanten wurde manuell festgelegt, an welcher Stelle im Dokument zum Beispiel die Rechnungsnummer steht. Sobald sich das Layout auch nur minimal ändert, hört so ein System auf zu funktionieren. Der \textit{SmartBillConverter} geht deshalb einen anderen Weg und verwendet Large Language Models (LLMs), die das Layout eines Dokuments selbstständig verstehen können. Die folgenden Abschnitte erklären die dafür nötigen technischen Grundlagen.
 
 \section{PDFs und Textextraktion}
 \label{sec:pdf_extraction}
 
 \subsection{Die Natur des PDF-Formats}
-Das Portable Document Format (PDF) wurde von Adobe entwickelt, um Dokumente geräteunabhängig darzustellen. Es ist ein Seitenbeschreibungssprache. Das bedeutet, ein PDF speichert primär Anweisungen wie "Zeichne den Buchstaben "A" an Koordinate (100, 200) in Schriftart Helvetica".
-Es speichert \textit{nicht} notwendigerweise die Information, dass dieses "A" Teil des Wortes "Rechnung" ist oder dass dieses Wort Teil einer Tabelle ist.
+PDFs sind keine Textdokumente mit Layoutinformationen \textemdash{} sie sind Renderinganweisungen, die zufällig auch Text enthalten können. Das Format speichert primär geometrische Befehle vom Typ ,,Zeichne Glyphe A an Koordinate (100,\,200) in Schrift Helvetica 12\,pt``. Ob dieses A zum Wort ,,Rechnungsnummer`` gehört, ob dieses Wort eine Tabellenüberschrift ist oder ob die nachfolgende Zahl einen Netto- oder Bruttobetrag darstellt \textemdash{} all das ist im PDF-Stream nicht kodiert und muss von Extraktionssoftware heuristisch erschlossen werden.
 
 Für die Textextraktion ergeben sich daraus massive Probleme:
 \begin{itemize}
@@ -241,42 +239,41 @@ Für die Textextraktion ergeben sich daraus massive Probleme:
 \end{itemize}
 
 \subsection{Lösungsansatz mit PdfPig}
-Im Projekt wird die Bibliothek \textit{PdfPig} eingesetzt. Sie versucht, die logische Struktur aus den geometrischen Informationen zu rekonstruieren.
-PdfPig analysiert die "Bounding Boxes" aller Buchstaben. Durch Heuristiken (Abstandsanalyse) werden Buchstaben zu Wörtern und Wörter zu Zeilen zusammengefügt.
-Ein spezifisches Problem bei Rechnungen sind Tabellen. Da Tabellenlinien im PDF nur Vektorgrafiken sind und keine logische Verbindung zum Text haben, ist es für Algorithmen schwer zu erkennen, welche Zahl zu welcher Spalte gehört, besonders wenn Spalten rechtsbündig sind und der Textabstand variiert.
-Dennoch liefert die direkte Extraktion aus dem PDF-Stream (wenn möglich) immer präzisere Daten als der Umweg über OCR, da keine Zeichenverwechslungen (z.B. "8" vs "B") auftreten können.\footnote{Vgl. UglyToad: \textit{PdfPig - Read and extract text and other content from PDFs in C\# (port of PdfBox)}, \url{https://github.com/UglyToad/PdfPig}, letzter Zugriff am 19.12.2025}
+Um dieses Problem zu lösen, wird die .NET-Bibliothek \textit{PdfPig} verwendet. Sie analysiert die genauen Koordinaten jedes einzelnen Buchstabens im PDF und versucht daraus die richtige Lesereihenfolge zu rekonstruieren. Buchstaben, die dicht nebeneinander auf gleicher Höhe liegen, werden zu Wörtern zusammengefügt, und Wörter auf der gleichen Linie bilden dann eine Textzeile.
+Besonders schwierig sind dabei Tabellen: Die Linien einer Tabelle im PDF sind nur gewöhnliche Vektorgrafiken ohne Verbindung zum Text. Deshalb kann die Software oft nicht erkennen, welche Zahl zu welcher Spalte gehört. Trotzdem ist diese direkte Textextraktion aus dem PDF deutlich besser als OCR, weil dabei keine Buchstabenverwechslungen wie bei ,,8`` und ,,B`` passieren können.\footnote{Vgl. UglyToad: \textit{PdfPig - Read and extract text and other content from PDFs in C\# (port of PdfBox)}, \url{https://github.com/UglyToad/PdfPig}, letzter Zugriff am 19.12.2025}
 
 \section{OCR mit Tesseract}
 \label{sec:ocr}
 
-Wenn Rechnungen nicht als digitales PDF, sondern als Scan (Rastergrafik) vorliegen, greift die Textextraktion ins Leere. Hier ist Optical Character Recognition (OCR) erforderlich.
+Liegt eine Rechnung nicht als nativ-digitales PDF vor \textemdash{} sei es als Scan einer physischen Vorlage oder als fotografische Aufnahme \textemdash{} liefert jede koordinatenbasierte Textextraktion ein leeres Ergebnis. Der Inhalt existiert in diesen Fällen ausschließlich als Pixelmuster, das erst durch Optical Character Recognition (OCR) in maschinenlesbaren Text überführt werden muss.
 
 \subsection{Funktionsweise von Tesseract}
-Tesseract ist eine der führenden Open-Source-OCR-Engines, ursprünglich von HP entwickelt und heute von Google gepflegt. Moderne Versionen (ab 4.0) basieren auf LSTM (Long Short-Term Memory) neuronalen Netzen, einer Form von Recurrent Neural Networks (RNNs), die besonders gut für Sequenzdaten wie Text geeignet sind.
-Tesseract analysiert das Bild in mehreren Schritten:
-1.  **Layout Analysis**: Finden von Textblöcke und Zeilen.
-2.  **Baseline Fitting**: Erkennen der Grundlinie einer Textzeile (wichtig bei schiefen Scans).
-3.  **Character Recognition**: Das neuronale Netz klassifiziert kleine Bildausschnitte als Zeichen.
-4.  **Word Recognition**: Wörterbuch-Abgleich, um die Wahrscheinlichkeit von Wortkombinationen zu bewerten.
+Als OCR-Engine wird \textit{Tesseract} verwendet, ein Open-Source-Projekt das ursprünglich von HP entwickelt wurde und heute von Google weiterentwickelt wird. Ab Version 4.0 basiert Tesseract auf LSTM-Netzen (Long Short-Term Memory), einer Art neuronalem Netz das gut mit sequenziellen Daten wie Text umgehen kann. Dadurch erkennt es Buchstaben deutlich zuverlässiger als ältere regelbasierte Methoden.
+Die Verarbeitung läuft grob in vier Schritten ab:
+\begin{enumerate}
+    \item \textbf{Layout-Analyse}: Identifikation von Textregionen, Spalten und Zeilen im Bild.
+    \item \textbf{Baseline-Fitting}: Erkennen der Grundlinie jeder Textzeile \textemdash{} wichtig damit Buchstaben richtig segmentiert werden können, auch wenn der Scan leicht schief ist.
+    \item \textbf{Zeichenerkennung}: Das LSTM-Netz analysiert kleine Bildausschnitte und ordnet ihnen Buchstaben mit einem Konfidenzwert zu.
+    \item \textbf{Worterkennung}: Wörterbücher helfen dabei, dass die erkannten Zeichenfolgen auch sinnvolle Wörter ergeben.
+\end{enumerate}
 
 \subsection{Einflussfaktoren auf die Qualität}
-Die Qualität der OCR hängt massiv von der Vorverarbeitung ab:
+Die erzielte Erkennungsqualität hängt dabei in erheblichem Maß von der Eingabequalität und vorgeschalteter Bildaufbereitung ab:
 \begin{itemize}
-    \item \textbf{Auflösung}: Unter 300 DPI sinkt die Erkennungsrate drastisch.
-    \item \textbf{Binarisierung}: Die Umwandlung von Graustufen in reines Schwarz-Weiß (Thresholding) muss adaptiv erfolgen, um Schatten oder ungleichmäßige Beleuchtung auszugleichen.
-    \item \textbf{Deskewing}: Schon eine Drehung um 1-2 Grad kann die Zeilenerkennung stören. Das Bild muss rechnerisch gerade gerückt werden.
+    \item \textbf{Auflösung}: Unter 300 DPI wird die Erkennungsrate deutlich schlechter, weil die feinen Linien einzelner Buchstaben zu wenige Pixel haben um sicher erkannt zu werden.
+    \item \textbf{Binarisierung}: Das Umwandeln in Schwarz-Weiß muss bei ungleichmäßiger Beleuchtung oder Schatten adaptiv erfolgen, also für verschiedene Bildbereiche getrennt berechnet werden, statt einen einzigen fixen Schwellwert für das gesamte Bild zu verwenden.
+    \item \textbf{Geraderichten (Deskewing)}: Selbst eine Drehung um nur zwei Grad reicht aus, damit Tesseract die Textzeilen nicht mehr richtig findet. Scans müssen deshalb immer rechnerisch gerade gerückt werden.
 \end{itemize}
-Im Projektkontext werden für Tesseract spezifische Sprachpakete (\texttt{deu.traineddata}) geladen, um deutsche Umlaute und typische Vokabeln korrekt zu erkennen. Dennoch bleibt OCR fehleranfällig, weshalb die nachgelagerte KI-Korrektur essenziell ist.
+Im Projekt werden die deutschsprachigen Trainingsdaten (\texttt{deu.traineddata}) geladen, da österreichische Rechnungen spezifische Vokabeln und Umlaute enthalten, deren fehlerhafte Erkennung nachgelagerte Extraktionsschritte unverhältnismäßig stark beeinträchtigt. Die verbleibende Fehlerquote wird durch die anschließende LLM-Korrekturschicht aufgefangen.
 
 \section{LLMs für Informationsextraktion}
 \label{sec:llm_extraction}
 
-Der Paradigmenwechsel in der Dokumentenverarbeitung kommt durch Large Language Models (LLMs). Anstatt Regeln zu programmieren ("Suche nach "Rechnungs-Nr." und nimm das Wort rechts daneben"), übergibt man dem LLM den gesamten unstrukturierten Text und bittet es, die Daten zu strukturieren.
+Der größte Unterschied zu älteren Ansätzen ist, dass kein Entwickler mehr für jedes mögliche Rechnungslayout eigene Erkennungsregeln schreiben muss. Stattdessen wird einfach der gesamte Text der Rechnung an das LLM übergeben, und das Modell strukturiert die Daten selbstständig in das gewünschte Format.
 
 \subsection{Architektur und Funktionsweise}
-LLMs basieren auf der Transformer-Architektur. Sie wurden auf riesigen Textmengen trainiert und haben gelernt, statistische Zusammenhänge zwischen Wörtern (Tokens) vorherzusagen.
-Für die Extraktion ist die Fähigkeit des "In-Context Learning" entscheidend. Das Modell versteht den Kontext einer Rechnung. Es weiß, dass eine IBAN meist in der Nähe von "Bankverbindung" steht und wie eine IBAN aussieht, ohne dass man ihm einen Regex geben muss.
-Es kann Synonyme auflösen: Egal ob auf der Rechnung "Total", "Gesamtbetrag", "Zahlbetrag" oder "Summe" steht, das LLM kann es auf das Feld \texttt{TotalAmount} mappen.
+Moderne LLMs basieren auf der Transformer-Architektur und verwenden Attention-Mechanismen, um Zusammenhänge zwischen verschiedenen Teilen eines Textes zu erkennen. Wichtig für die Extraktion ist das sogenannte \textit{In-Context Learning}: Das Modell wurde zwar nie speziell auf Rechnungen trainiert, hat aber durch sein allgemeines Training gelernt, dass eine IBAN meistens bei Wörtern wie ,,Bankverbindung`` oder ,,Kontonummer`` steht.
+Außerdem kann das Modell Synonyme automatisch auflösen: Ob auf der Rechnung ,,Total``, ,,Zahlbetrag``, ,,Rechnungssumme`` oder ,,zu zahlender Betrag`` steht \textemdash{} das Modell erkennt in allen Fällen, dass dasselbe Feld \texttt{TotalAmount} gemeint ist.
 
 \subsection{Modell-Vergleich und Evaluation}
 Im Rahmen der Entwicklung wurden verschiedene Modelle evaluiert (siehe Projektdokumentation):
@@ -287,20 +284,20 @@ Im Rahmen der Entwicklung wurden verschiedene Modelle evaluiert (siehe Projektdo
 \end{itemize}
 
 \subsection{Risiken: Halluzinationen}
-Das größte Risiko bei LLMs ist die Halluzination. Das Modell ist darauf trainiert, eine "plausible Fortsetzung" des Textes zu generieren. Wenn auf der Rechnung kein Lieferdatum steht, das JSON-Schema aber ein Lieferdatum verlangt, "erfindet" das Modell oft einfach eines (z.B. das Rechnungsdatum), um den User zufrieden zu stellen.
-Dies ist fatal für eine Finanzanwendung. Daher muss der Prompt so gestaltet sein, dass das Modell explizit "null" oder "nicht vorhanden" ausgibt, anstatt zu raten.
+Das größte Problem bei LLMs ist die Halluzination. LLMs sind so trainiert, dass sie immer eine möglichst sinnvolle Antwort generieren. Wenn auf einer Rechnung zum Beispiel kein Lieferdatum steht, das JSON-Schema aber eines erwartet, dann erfindet das Modell einfach ein Datum \textemdash{} meistens das Rechnungsdatum.
+Für eine Finanzanwendung ist das ein ernstes Problem, weil ein erfundenes Lieferdatum in einer archivierten Rechnung steuerrechtliche Folgen haben kann. Der Prompt muss deshalb das Modell klar anweisen, in solchen Fällen \texttt{null} zurückzugeben statt zu raten.
 
 \section{Prompt-Design für deterministische Ausgabe}
 \label{sec:prompt_design}
 
-Prompt Engineering ist die Kunst, die Eingabe so zu formulieren, dass das Modell das gewünschte Ergebnis liefert. Für die API-basierte Extraktion ist Determinismus das Ziel.
+Prompt Engineering bedeutet, die Eingabe an das Modell so zu formulieren, dass man die gewünschten Ergebnisse bekommt. Bei der Datenextraktion geht es dabei nicht um Kreativität, sondern darum, dass das Modell bei gleicher Eingabe immer die gleiche Ausgabe liefert.
 
 \subsection{Techniken}
 \begin{itemize}
-    \item \textbf{System Prompting}: Dem Modell wird eine klare Rolle zugewiesen: "Du bist ein strikter Datenextraktions-Assistent. Du antwortest nur mit JSON. Du fügst keine Erklärungen hinzu."
-    \item \textbf{JSON Mode / Function Calling}: Moderne APIs (wie OpenAI oder Gemini) bieten Modi an, die garantieren, dass der Output valides JSON ist. Das Modell wird gezwungen, Tokens zu generieren, die der Syntax entsprechen.
-    \item \textbf{Schema Injection}: Das gewünschte JSON-Schema wird im Prompt mitgegeben. "Extrahiere die Daten in folgendes Format: \{ "invoiceNumber": "string", ... \}".
-\textbf{Chain-of-Thought Unterdrückung}: Während bei Logikaufgaben "Denk nach Schritt für Schritt" hilft, ist es bei der Extraktion oft hinderlich, da es den Output "verunreinigt". Wir wollen nur die Daten.
+    \item \textbf{System Prompting}: Am Anfang des Prompts wird dem Modell eine klare Rolle gegeben, z.B.: ,,Du bist ein Datenextraktions-Assistent. Antworte ausschließlich mit einem gültigen JSON-Objekt, ohne zusätzlichen Text.``
+    \item \textbf{JSON Mode / Structured Output}: Moderne APIs wie Google Gemini oder OpenAI bieten einen speziellen Modus an, bei dem die Antwort des Modells immer gültiges JSON ist. Das ist zuverlässiger als einfach im Prompt darum zu bitten.
+    \item \textbf{Schema Injection}: Das Ziel-JSON-Schema wird als Teil des Prompts übergeben, sodass das Modell die erwarteten Feldnamen, Typen und Pflichtfelder als Kontext erhält.
+    \item \textbf{Chain-of-Thought Unterdrückung}: Bei manchen Aufgaben hilft es, das Modell Schritt für Schritt denken zu lassen. Bei der Datenextraktion ist das aber hinderlich, weil das Modell dann Erklärungen in die Antwort mischt. Mit der Anweisung ,,Keine Erklärungen, nur das JSON-Objekt`` wird das verhindert.
 \end{itemize}
 
 Ein Beispiel für ein solches JSON-Schema, wie es im \textit{SmartBillConverter} verwendet wird, zeigt Listing \ref{lst:json_schema}. Es definiert strikte Typen für die Extraktion.
@@ -330,21 +327,21 @@ Ein Beispiel für ein solches JSON-Schema, wie es im \textit{SmartBillConverter}
 }
 \end{lstlisting}
 
-Ein spezifisches Problem im Projekt war die Konsistenz. Manchmal lieferte das gleiche Modell beim gleichen Prompt leicht unterschiedliche Ergebnisse (z.B. Datumsformat mal YYYY-MM-DD, mal DD.MM.YYYY). Dies muss durch strikte Anweisungen ("Formatiere alle Daten als ISO 8601") und niedrige Temperature-Einstellungen (Temperature = 0) minimiert werden.
+Ein konkretes Problem war, dass dasselbe Modell beim gleichen Prompt manchmal unterschiedliche Ergebnisse geliefert hat \textemdash{} zum Beispiel Daten mal im Format YYYY-MM-DD und mal als DD.MM.YYYY. Das lässt sich durch genaue Formatierungsanweisungen im Prompt (,,Alle Daten im Format YYYY-MM-DD``) und die Einstellung Temperature\,=\,0 beheben, weil das Modell dann immer den wahrscheinlichsten Wert auswählt und die Ausgabe stabiler wird.
 
 \section{Datenschutz und Sicherheit in KI-APIs}
 \label{sec:ai_security}
 
-Die Nutzung von Cloud-basierten KI-APIs (wie Google Vertex AI oder OpenAI API) für Rechnungsdaten wirft Datenschutzfragen auf, da Rechnungen personenbezogene Daten (Namen, Adressen) und Geschäftsgeheimnisse (Preise, Lieferantenbeziehungen) enthalten.
+Rechnungen enthalten viele sensible Informationen: personenbezogene Daten wie Namen, Adressen und UID-Nummern, aber auch Geschäftsinterna wie Preise, Lieferanten und Projektbezeichnungen. Wenn diese Daten an eine Cloud-KI-API geschickt werden, verlassen sie die eigene Infrastruktur \textemdash{} was aus Datenschutzsicht problematisch ist.
 
 \subsection{Risikoanalyse}
 \begin{itemize}
-    \item \textbf{Training auf Kundendaten}: Das größte Risiko ist, dass der Anbieter (Google, OpenAI) die hochgeladenen Rechnungen nutzt, um seine Modelle zu trainieren. Dies könnte dazu führen, dass das Modell in Zukunft Informationen aus diesen Rechnungen "weiß". Enterprise-Verträge schließen dies meist explizit aus ("Zero Data Retention" für Training).
-    \item \textbf{Datenübertragung}: Die Daten verlassen das geschützte Unternehmensnetzwerk. Eine Ende-zu-Ende-Verschlüsselung (TLS 1.3) ist Standard, aber der API-Endpunkt entschlüsselt die Daten zur Verarbeitung.
-    \item \textbf{Serverstandort}: Nach DSGVO sollten personenbezogene Daten idealerweise den Europäischen Wirtschaftsraum (EWR) nicht verlassen. Bei US-Anbietern ist auf Angemessenheitsbeschlüsse (Data Privacy Framework) zu achten.
+    \item \textbf{Modelltraining auf Kundendaten}: Ohne einen speziellen Enterprise-Vertrag können Anbieter wie Google oder OpenAI die eingesendeten Anfragen für das Training ihrer Modelle verwenden. Im normalen Tarif ist das erlaubt, im Enterprise-Tarif wird es vertraglich ausgeschlossen.
+    \item \textbf{Daten im Klartext beim Anbieter}: Auch wenn die Übertragung per TLS verschlüsselt ist, muss der Anbieter die Daten für die Verarbeitung entschlüsseln. Kurzzeitig liegen die Rechnungsdaten also im Klartext auf den Servern des Anbieters. Bei einem lokal betriebenen Modell fällt dieses Risiko weg.
+    \item \textbf{Rechtliche Unsicherheit}: US-Anbieter fallen unter den CLOUD Act, der amerikanischen Behörden bestimmte Zugriffmöglichkeiten gibt, selbst wenn die Daten auf europäischen Servern gespeichert sind. Das EU-US Data Privacy Framework, das solche Datentransfers regelt, ist außerdem politisch unsicher und wurde schon mehrfach vor Gericht angefochten.
 \end{itemize}
 
 \subsection{Lokale Alternativen}
-Um diese Risiken zu eliminieren, wäre der Einsatz lokaler LLMs (z.B. Llama 3, Mistral) via Ollama oder LM Studio eine Option. Diese laufen auf der eigenen Hardware (On-Premise).
-Der Nachteil ist der hohe Ressourcenbedarf (GPU-VRAM) und die oft schlechtere Leistung im Vergleich zu den riesigen Cloud-Modellen. Ein lokales 7B-Modell hat oft Schwierigkeiten mit komplexen, mehrseitigen Rechnungen, die ein großes Kontextfenster benötigen.
-Für den \textit{SmartBillConverter} wurde aufgrund der Qualität und Entwicklungsgeschwindigkeit auf Cloud-APIs gesetzt, wobei im Produktionsbetrieb auf Enterprise-Lizenzen mit entsprechenden Datenschutzgarantien gewechselt werden müsste.
+Eine datenschutzfreundliche Alternative wäre, ein Open-Source-Modell wie Llama\,3 oder Mistral lokal auf eigener Hardware zu betreiben, zum Beispiel mit dem Tool Ollama. Dann verlassen die Rechnungsdaten nie die eigene Infrastruktur.
+Der Nachteil ist, dass lokale Modelle deutlich mehr Hardware-Ressourcen brauchen. Für mehrseitige Rechnungen mit viel Text werden große Modelle mit 70B+ Parametern benötigt, die ohne eine leistungsstarke GPU sehr langsam sind. Kleinere Modelle mit 7B oder 13B Parametern liefern bei komplexen Rechnungen oft zu schlechte Ergebnisse.
+Für den \textit{SmartBillConverter} wurde deshalb die Cloud-API von Gemini gewählt, weil die Qualität besser ist und die Entwicklung damit schneller geht. Für einen richtigen Produktivbetrieb müsste man aber auf einen Enterprise-Tarif mit entsprechenden Datenschutzgarantien umsteigen.
