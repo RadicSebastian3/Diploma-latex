@@ -1,0 +1,182 @@
+\setauthor{Luis Schörgendorfer}
+\chapter{Anbindung der Backend-API (InvoiceService)}
+\label{chap:frontend_backend_anbindung}
+
+Die Kommunikation zwischen Frontend und Backend erfolgt über HTTP-Anfragen. Dieses Kapitel beschreibt den InvoiceService im SmartBillConverter-Projekt, der alle Anfragen an die Backend-API verwaltet.
+
+\section{Implementierung des Angular InvoiceService}
+
+Der InvoiceService ist das zentrale Element für die Backend-Kommunikation. Er kapselt alle HTTP-Anfragen und stellt sie als einfache Methoden für die Komponenten bereit.
+
+\subsection{Grundstruktur des Service}
+
+Ein Angular Service wird mit dem \texttt{@Injectable}-Decorator markiert. Das ermöglicht es Angular, den Service automatisch in andere Komponenten zu injizieren.\footnote{Vgl. Angular Documentation: \textit{Dependency Injection in Angular}, \url{https://angular.io/guide/dependency-injection}, abgerufen am 15.01.2025}
+
+\begin{lstlisting}[language=TypeScript, caption={Grundstruktur des InvoiceService}]
+@Injectable({
+  providedIn: 'root'
+})
+export class InvoiceService {
+  private apiUrl = environment.apiUrl;
+  
+  constructor(private http: HttpClient) { }
+}
+\end{lstlisting}
+
+Die \texttt{apiUrl} wird aus der Environment-Konfiguration geladen. Das ist praktisch, weil man die URL für Entwicklung und Produktion unterschiedlich setzen kann. Für Entwicklung ist es \texttt{http://localhost:5000/api}, für Produktion würde man die echte Server-URL eintragen.
+
+\subsection{Intelligente Upload-Methode}
+
+Die Hauptmethode \texttt{uploadInvoice} entscheidet automatisch, welchen Backend-Endpunkt sie verwenden soll. PDFs und Bilder werden unterschiedlich verarbeitet:
+
+\begin{lstlisting}[language=TypeScript, caption={Automatische Routing-Logik basierend auf Dateityp}]
+uploadInvoice(file: File): Observable<any> {
+  const formData = new FormData();
+  formData.append('file', file);
+  
+  if (file.type === 'application/pdf') {
+    return this.http.post(
+      `${this.apiUrl}/Processing/upload`, 
+      formData
+    );
+  } else if (this.isImageFile(file)) {
+    return this.uploadImage(file);
+  } else {
+    throw new Error(`Unsupported file type: ${file.type}`);
+  }
+}
+
+private isImageFile(file: File): boolean {
+  const imageTypes = ['image/png', 'image/jpeg', 'image/jpg', 
+                     'image/bmp', 'image/tiff', 'image/gif'];
+  return imageTypes.includes(file.type);
+}
+\end{lstlisting}
+
+Diese Lösung vereinfacht die Verwendung in den Komponenten. Die Upload-Komponente muss sich nicht darum kümmern, ob es sich um ein PDF oder ein Bild handelt. Der Service übernimmt diese Entscheidung.
+
+\subsection{Observable-Pattern}
+
+Alle Service-Methoden geben ein \texttt{Observable} zurück. Das ist ein RxJS-Konzept für asynchrone Datenverarbeitung.\footnote{Vgl. Angular Documentation: \textit{Observables in Angular}, \url{https://angular.io/guide/observables}, abgerufen am 15.01.2025} Die Komponente kann das Observable mit \texttt{.subscribe()} abonnieren und bekommt die Daten, wenn die Server-Antwort eingetroffen ist.
+
+\section{Aktivierung der ZUGFeRD-Funktionalität im Frontend}
+
+ZUGFeRD ist das deutsche Pendant zu ebInterface. Die Implementierung der ZUGFeRD-Funktionalität war eine Erweiterung des bestehenden Systems.
+
+\subsection{Separate Upload-Methode für ZUGFeRD}
+
+Für ZUGFeRD gibt es eine eigene Upload-Methode, weil das Backend einen anderen Endpunkt verwendet:
+
+\begin{lstlisting}[language=TypeScript, caption={ZUGFeRD-spezifische Upload-Methode}]
+uploadInvoiceForZugferd(file: File): Observable<any> {
+  const formData = new FormData();
+  formData.append('file', file);
+  
+  if (this.isImageFile(file)) {
+    return this.http.post(
+      `${this.apiUrl}/zugferd/upload-image`, 
+      formData,
+      { responseType: 'text' }
+    );
+  } else {
+    return this.http.post(
+      `${this.apiUrl}/zugferd/upload-pdf`, 
+      formData,
+      { responseType: 'text' }
+    );
+  }
+}
+\end{lstlisting}
+
+Der Unterschied ist der Endpunkt (\texttt{/zugferd/upload-pdf} statt \texttt{/Processing/upload}) und der Response-Typ. ZUGFeRD gibt direkt das XML als Text zurück, während ebInterface ein JSON-Objekt mit mehreren Feldern zurückgibt.
+
+\subsection{Response-Transformation}
+
+Das XML-Response muss in ein einheitliches Format umgewandelt werden, damit die Upload-Komponente beide Formate gleich behandeln kann:
+
+\begin{lstlisting}[language=TypeScript, caption={Transformation des ZUGFeRD-Response}]
+return this.http.post(`${this.apiUrl}/zugferd/upload-pdf`, 
+                     formData, { responseType: 'text' })
+  .pipe(
+    map((xmlResponse: string) => {
+      return {
+        zugferdXml: xmlResponse
+      };
+    })
+  );
+\end{lstlisting}
+
+Der \texttt{map}-Operator von RxJS wandelt die einfache Text-Antwort in ein Objekt um.\footnote{Vgl. ReactiveX: \textit{RxJS Operators Documentation}, \url{https://rxjs.dev/guide/operators}, abgerufen am 15.01.2025} Dadurch kann die Upload-Komponente einheitlich mit \texttt{result.zugferdXml} oder \texttt{result.workflow.ebInterfaceXml} auf das XML zugreifen.
+
+\section{Implementierung des HTTP-Event-Tracking}
+
+HTTP-Event-Tracking ermöglicht es, den Fortschritt eines Uploads zu verfolgen. Im SmartBillConverter-Projekt wurde dies jedoch nicht vollständig implementiert, weil die meisten Dateien klein sind und sehr schnell hochgeladen werden.
+
+\subsection{Aktueller Ansatz}
+
+Statt echtem Upload-Fortschritt verwendet das Projekt Status-Tracking auf Komponenten-Ebene. Die Upload-Komponente setzt den Status manuell auf "Processing" und "Completed":
+
+\begin{lstlisting}[language=TypeScript, caption={Status-Tracking in der Upload-Komponente}]
+this.invoiceService.uploadInvoice(file).subscribe({
+  next: (response) => {
+    fileItem.status = 'completed';
+    fileItem.result = response;
+  },
+  error: (error) => {
+    fileItem.status = 'error';
+    fileItem.errorMessage = error.error?.error || 'Unbekannter Fehler';
+  }
+});
+\end{lstlisting}
+
+Diese Lösung ist einfacher und ausreichend für die meisten Anwendungsfälle. Bei größeren Dateien könnte man in Zukunft echtes HTTP-Event-Tracking hinzufügen.
+
+\section{XML-Download-Funktionalität}
+
+Nach erfolgreicher Konvertierung wollen Benutzer die generierte XML-Datei herunterladen. Der InvoiceService bietet dafür eine praktische Methode.
+
+\subsection{Download mit Blob URLs}
+
+Der Download funktioniert über Blob URLs. Ein Blob ist ein temporäres Objekt, das Dateien im Browser repräsentiert:\footnote{Vgl. MDN Web Docs: \textit{Blob}, \url{https://developer.mozilla.org/en-US/docs/Web/API/Blob}, abgerufen am 15.01.2025}
+
+\begin{lstlisting}[language=TypeScript, caption={XML-Download-Methode}]
+generateXmlDownload(xmlContent: string, invoiceNumber: string, 
+                   format: 'ebInterface' | 'ZUGFeRD'): void {
+  const blob = new Blob([xmlContent], { type: 'application/xml' });
+  const url = window.URL.createObjectURL(blob);
+  
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `${format.toLowerCase()}_${invoiceNumber}.xml`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  window.URL.revokeObjectURL(url);
+}
+\end{lstlisting}
+
+Diese Methode erstellt ein unsichtbares Link-Element, setzt den Download-Namen und triggert automatisch den Download. Danach werden das Link-Element und die Blob URL wieder aufgeräumt.
+
+\subsection{Verwendung in der Upload-Komponente}
+
+Die Upload-Komponente ruft die Download-Methode auf, wenn der Benutzer auf den Download-Button klickt. Das XML wird aus dem Backend-Response extrahiert und der Dateiname wird aus der Rechnungsnummer und dem Format zusammengesetzt.
+
+\subsection{Batch-Download für mehrere Dateien}
+
+Für den Fall, dass mehrere Dateien gleichzeitig konvertiert wurden, gibt es auch eine Batch-Download-Funktion:
+
+\begin{lstlisting}[language=TypeScript, caption={Download aller XML-Dateien}]
+downloadAllXml(): void {
+  this.allResults.forEach((result, index) => {
+    setTimeout(() => {
+      this.invoiceService.generateXmlDownload(
+        xmlContent,
+        invoiceNumber,
+        this.selectedFormat!
+      );
+    }, index * 500);
+  });
+}
+\end{lstlisting}
+
+Zwischen den Downloads wird eine Pause von 500 Millisekunden eingelegt. Das verhindert, dass der Browser mit zu vielen gleichzeitigen Downloads überfordert wird.

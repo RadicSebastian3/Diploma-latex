@@ -1,0 +1,154 @@
+\setauthor{Luis Schörgendorfer}
+\chapter{Performance und Optimierung (Frontend)}
+\label{chap:frontend_performance}
+
+Während der Entwicklung traten einige Probleme auf, die die Benutzerfreundlichkeit beeinträchtigten. Dieses Kapitel beschreibt die wichtigsten Fehler und deren Behebung im SmartBillConverter-Projekt.
+
+\section{Behebung des Upload-Bugs}
+
+Der erste schwerwiegende Bug trat auf, als Benutzer eine hochgeladene Datei entfernen und dann direkt eine neue Datei hochladen wollten. Das System weigerte sich, die neue Datei zu akzeptieren.
+
+\subsection{Problem-Analyse}
+
+Der Fehler lag im HTML-File-Input-Element. Wenn eine Datei ausgewählt wurde und dann der "Entfernen"-Button geklickt wurde, löschte die Anwendung zwar alle internen Variablen (\texttt{selectedFile}, \texttt{previewUrl}, etc.), aber das File-Input-Element selbst behielt seinen Wert. Wenn der Benutzer dann die gleiche Datei erneut auswählte, feuerte das \texttt{change}-Event nicht, weil sich der Wert technisch gesehen nicht geändert hatte.
+
+\subsection{Lösung}
+
+Die Lösung war, das File-Input-Element beim Entfernen einer Datei manuell zurückzusetzen:
+
+\begin{lstlisting}[language=TypeScript, caption={Vollständiger Reset beim Datei-Entfernen}]
+private clearAllFileData(): void {
+  // File Input zurücksetzen
+  if (this.fileInput?.nativeElement) {
+    this.fileInput.nativeElement.value = '';
+  }
+  
+  // Multi-file data löschen
+  this.selectedFiles = [];
+  this.currentProcessingIndex = -1;
+  this.allResults = [];
+  
+  // Alle anderen Variablen zurücksetzen
+  this.selectedFile = null;
+  this.previewUrl = null;
+  this.showPreview = false;
+  this.pdfData = null;
+  this.isProcessing = false;
+  this.isProcessingAll = false;
+  this.processedCount = 0;
+  this.totalFiles = 0;
+  
+  this.hideError();
+}
+\end{lstlisting}
+
+Der wichtige Teil ist \texttt{this.fileInput.nativeElement.value = ''}. Das setzt den internen Wert des HTML-Elements zurück. Dadurch funktioniert das erneute Hochladen der gleichen Datei problemlos.
+
+\subsection{ViewChild für Element-Zugriff}
+
+Um auf das File-Input-Element zugreifen zu können, wurde \texttt{@ViewChild} verwendet:\footnote{Vgl. Angular Documentation: \textit{ViewChild}, \url{https://angular.io/api/core/ViewChild}, abgerufen am 15.01.2025}
+
+\begin{lstlisting}[language=TypeScript, caption={ViewChild-Deklaration}]
+@ViewChild('fileInput') fileInput!: ElementRef<HTMLInputElement>;
+\end{lstlisting}
+
+Das entsprechende HTML-Element hat eine Template-Referenz:
+
+\begin{lstlisting}[language=HTML, caption={Template-Referenz im Input}]
+<input 
+  #fileInput
+  type="file" 
+  class="d-none" 
+  accept=".pdf,.png,.jpg,.jpeg,.bmp,.tiff,.gif"
+  multiple
+  (change)="onFileSelected($event)">
+\end{lstlisting}
+
+Mit dieser Lösung kann TypeScript-Code direkt auf das DOM-Element zugreifen und dessen Eigenschaften ändern.
+
+\section{Optimierung der Navigationsleiste}
+
+Ein weiteres Problem war, dass Benutzer versehentlich auf das "Smart Bill Converter"-Logo in der Navigationsleiste klickten. Das Logo war ursprünglich als Link zur Startseite gedacht, aber die Anwendung hat nur eine Seite. Ein Klick auf das Logo führte zu einem unnötigen Reload der Seite.
+
+\subsection{Umwandlung von Link zu Text}
+
+Die Lösung war einfach: Das \texttt{<a>}-Element wurde durch ein \texttt{<span>}-Element ersetzt:
+
+\begin{lstlisting}[language=HTML, caption={Logo ohne Link-Funktionalität}]
+<!-- Vorher: Klickbar -->
+<a class="navbar-brand" routerLink="/">Smart Bill Converter</a>
+
+<!-- Nachher: Nicht klickbar -->
+<span class="navbar-brand">Smart Bill Converter</span>
+\end{lstlisting}
+
+\subsection{CSS-Anpassungen}
+
+Zusätzlich wurde das CSS angepasst, um zu signalisieren, dass das Logo nicht klickbar ist:
+
+\begin{lstlisting}[caption={Cursor-Style für nicht-klickbares Logo}]
+.navbar-brand {
+  font-size: 1.4rem;
+  color: #495057;
+  cursor: default;
+  text-decoration: none;
+}
+
+.navbar-brand:hover {
+  color: #495057;
+}
+\end{lstlisting}
+
+Der \texttt{cursor: default} zeigt einen normalen Mauszeiger statt eines Zeige-Fingers. Das ist ein visuelles Signal, dass das Element nicht klickbar ist. Die Hover-Regel verhindert, dass sich die Farbe beim Darüberfahren ändert.
+
+\section{Responsive Design-Optimierung}
+
+Die Anwendung sollte auf verschiedenen Bildschirmgrößen gut funktionieren. Besonders auf Smartphones mussten einige Anpassungen gemacht werden.
+
+\subsection{Upload-Bereich für Mobile}
+
+Auf kleinen Bildschirmen wurde der Upload-Bereich zu groß und die Icons zu riesig:
+
+\begin{lstlisting}[caption={Mobile-Optimierung des Upload-Bereichs}]
+@media (max-width: 768px) {
+  .upload-area {
+    padding: 40px 15px;
+    min-height: 200px;
+  }
+
+  .upload-content i {
+    font-size: 3rem;
+  }
+
+  .preview-image {
+    max-height: 300px;
+  }
+}
+\end{lstlisting}
+
+Die Padding-Werte wurden reduziert (von 60px auf 40px), die Mindesthöhe verkleinert (von 250px auf 200px) und die Icon-Größe angepasst (von 4rem auf 3rem). Das macht den Upload-Bereich kompakter und besser bedienbar auf mobilen Geräten.
+
+\subsection{Buttons und Schriftgrößen}
+
+Auch Buttons wurden für Touch-Bedienung optimiert:
+
+\begin{lstlisting}[caption={Touch-freundliche Button-Größen}]
+.btn-sm {
+  min-width: 40px;
+  min-height: 40px;
+  border-radius: 4px;
+}
+
+@media (max-width: 768px) {
+  .btn-lg {
+    padding: 10px 16px;
+    font-size: 1rem;
+  }
+}
+\end{lstlisting}
+
+Kleine Buttons bekommen eine Mindestgröße von 40x40 Pixeln. Das ist wichtig, weil Finger breiter sind als Mauszeiger. Gängige Empfehlungen sprechen von mindestens 44x44 Pixel für Touch-Targets.\footnote{Vgl. Google Material Design: \textit{Touch Targets}, \url{https://m3.material.io/foundations/accessible-design/accessibility-basics}, abgerufen am 15.01.2025}
+
+\subsection{Weitere Optimierungen}
+
+Auf sehr kleinen Bildschirmen (unter 576px Breite) werden die Aktions-Buttons unter den Dateinamen verschoben statt rechts daneben. Die PDF-Vorschau nutzt auf Mobilgeräten mehr Platz (95\% statt 90\%) und hat weniger Padding.

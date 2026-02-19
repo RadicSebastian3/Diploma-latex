@@ -1,0 +1,194 @@
+\setauthor{Luis Schörgendorfer}
+\chapter{UI/UX und Interaktionsdesign}
+\label{chap:frontend_uiux}
+
+Das Design der Benutzeroberfläche ist wichtig für die Akzeptanz der Anwendung. Dieses Kapitel beschreibt die wichtigsten UI/UX-Entscheidungen im SmartBillConverter-Projekt und zeigt, wie die Benutzeroberfläche entwickelt wurde.
+
+\section{Implementierung der Format-Auswahl}
+
+Eine der ersten Anforderungen war die Auswahl zwischen zwei Rechnungsformaten: ebInterface (österreichischer Standard) und ZUGFeRD (deutscher Standard). Benutzer sollten vor dem Upload entscheiden können, in welches Format ihre Rechnung konvertiert werden soll.
+
+\subsection{Design der Format-Buttons}
+
+Die zwei Formate wurden als große Buttons dargestellt, die nebeneinander angeordnet sind. Jedes Format hat eine eigene Farbe, um die Unterscheidung zu erleichtern. ebInterface ist grün und ZUGFeRD ist rot.
+
+\begin{lstlisting}[language=HTML, caption={Format-Auswahl-Buttons im HTML-Template}]
+<div class="col-md-5">
+  <button 
+    class="btn btn-format ebinterface-btn w-100" 
+    [class.selected]="selectedFormat === 'ebInterface'"
+    (click)="selectFormat('ebInterface')">
+    <i class="bi bi-file-earmark-text me-2"></i>
+    ebInterface
+  </button>
+</div>
+<div class="col-md-5">
+  <button 
+    class="btn btn-format zugferd-btn w-100" 
+    [class.selected]="selectedFormat === 'ZUGFeRD'"
+    (click)="selectFormat('ZUGFeRD')">
+    <i class="bi bi-file-earmark-text me-2"></i>
+    ZUGFeRD
+  </button>
+</div>
+\end{lstlisting}
+
+Die Buttons haben einen Rahmen in der jeweiligen Farbe und einen leicht transparenten Hintergrund. Wenn der Benutzer mit der Maus über einen Button fährt oder ihn auswählt, wird der Hintergrund voll eingefärbt und der Text wird weiß.
+
+\subsection{Toggle-Funktionalität}
+
+Ein besonderes Feature ist, dass Benutzer ihre Auswahl wieder rückgängig machen können. Wenn sie auf den bereits ausgewählten Button klicken, wird die Auswahl aufgehoben und die Upload-Sektion verschwindet wieder. Das ist nützlich, wenn jemand sich umentscheidet oder versehentlich das falsche Format gewählt hat.
+
+\begin{lstlisting}[language=TypeScript, caption={Toggle-Logik in der selectFormat-Methode}]
+selectFormat(format: 'ebInterface' | 'ZUGFeRD'): void {
+  if (this.selectedFormat === format) {
+    // Wenn das Format bereits ausgewählt war, deselektieren
+    this.selectedFormat = null;
+    this.showUploadSection = false;
+    this.clearAllFileData();
+  } else {
+    // Neues Format auswählen
+    this.selectedFormat = format;
+    this.showUploadSection = true;
+  }
+}
+\end{lstlisting}
+
+Diese Lösung verbessert die Benutzerfreundlichkeit, weil Benutzer nicht gezwungen sind, ihre Wahl beizubehalten. Sie können jederzeit neu starten.
+
+\section{Design der Multi-File-UI}
+
+Anfangs konnte das System nur eine Datei gleichzeitig verarbeiten. Das wurde später erweitert, weil viele Benutzer mehrere Rechnungen auf einmal konvertieren wollen. Die Herausforderung war, alle Dateien übersichtlich darzustellen.
+
+\subsection{Kartenlayout für Dateiliste}
+
+Die Lösung ist ein Kartenlayout, bei dem jede hochgeladene Datei als eigener Eintrag in einer Liste dargestellt wird. Jeder Eintrag zeigt den Dateinamen, die Dateigröße und ein Icon, das anzeigt, ob es sich um ein PDF oder ein Bild handelt.
+
+\begin{lstlisting}[language=HTML, caption={Dateiliste mit Karten-Design}]
+<div class="card">
+  <div class="card-header d-flex justify-content-between">
+    <h6 class="mb-0">
+      <i class="bi bi-files me-2"></i>
+      {{ selectedFiles.length }} Dateien ({{ getTotalFileSizeMB() }} MB)
+    </h6>
+    <button class="btn btn-outline-secondary btn-sm"
+            (click)="removeFile()">
+      <i class="bi bi-trash me-1"></i>
+      Alle entfernen
+    </button>
+  </div>
+  <div class="card-body p-0">
+    <div class="list-group list-group-flush">
+      @for (fileItem of selectedFiles; track fileItem.id) {
+        <div class="list-group-item">
+          <!-- Datei-Informationen und Aktionen -->
+        </div>
+      }
+    </div>
+  </div>
+</div>
+\end{lstlisting}
+
+Der Karten-Header zeigt die Gesamtanzahl der Dateien und die Gesamtgröße. Das ist praktisch, weil Benutzer sofort sehen, wie viele Dateien sie hochgeladen haben. Der Button "Alle entfernen" erlaubt es, mit einem Klick alle Dateien zu löschen und neu zu starten.
+
+\subsection{Aktionen pro Datei}
+
+Jede Datei hat drei Buttons: Vorschau anzeigen, XML herunterladen (nur nach erfolgreicher Konvertierung) und Datei entfernen. Der Download-Button wird nur angezeigt, wenn die Konvertierung erfolgreich war.
+
+\section{Evolution der Statusanzeige}
+
+Ein wichtiger Teil der Benutzeroberfläche ist die Anzeige des Verarbeitungsstatus. Benutzer wollen wissen, was gerade mit ihrer Datei passiert.
+
+\subsection{Vier Status-Stufen}
+
+Jede Datei durchläuft vier mögliche Status:
+
+\begin{itemize}
+    \item \textbf{Pending} (Wartend): Die Datei wurde hochgeladen, aber noch nicht verarbeitet. Wird grau dargestellt.
+    \item \textbf{Processing} (Wird verarbeitet): Die Datei wird gerade vom Backend konvertiert. Wird gelb dargestellt mit animiertem Streifen-Muster.
+    \item \textbf{Completed} (Abgeschlossen): Die Konvertierung war erfolgreich. Wird grün dargestellt.
+    \item \textbf{Error} (Fehler): Es ist ein Fehler aufgetreten. Wird rot dargestellt.
+\end{itemize}
+
+\subsection{Progress Bars}
+
+Unter jedem Dateinamen befindet sich eine Fortschrittsanzeige (Progress Bar). Diese zeigt visuell den aktuellen Status:
+
+\begin{lstlisting}[language=HTML, caption={Progress Bar mit Farbcodierung}]
+<div class="progress" style="height: 8px;">
+  <div class="progress-bar" 
+       [ngClass]="{
+         'bg-secondary': fileItem.status === 'pending',
+         'bg-warning progress-bar-striped progress-bar-animated': 
+           fileItem.status === 'processing',
+         'bg-success': fileItem.status === 'completed',
+         'bg-danger': fileItem.status === 'error'
+       }"
+       [style.width.%]="getProgressPercentage(fileItem)">
+  </div>
+</div>
+\end{lstlisting}
+
+Die Progress Bar ist zu 0\% gefüllt bei "Pending", zu 50\% bei "Processing" und zu 100\% bei "Completed" oder "Error". Der Streifen-Effekt bei "Processing" gibt dem Benutzer ein visuelles Feedback, dass gerade etwas passiert.
+
+\subsection{Textuelle Status-Anzeige}
+
+Zusätzlich zur farbigen Progress Bar gibt es auch eine Textanzeige, die den Status erklärt:
+
+\begin{lstlisting}[language=HTML, caption={Status-Text mit Icons}]
+@if (fileItem.status === 'pending') {
+  <small class="text-muted">Wartend...</small>
+} @else if (fileItem.status === 'processing') {
+  <small class="text-warning">Wird verarbeitet...</small>
+} @else if (fileItem.status === 'completed') {
+  <small class="text-success">Erfolgreich konvertiert</small>
+} @else if (fileItem.status === 'error') {
+  <small class="text-danger">Fehler aufgetreten</small>
+  @if (fileItem.errorMessage) {
+    <br><small class="text-danger">{{ fileItem.errorMessage }}</small>
+  }
+}
+\end{lstlisting}
+
+Bei Fehlern wird zusätzlich die Fehlermeldung vom Backend angezeigt. Das hilft dem Benutzer zu verstehen, was schief gelaufen ist.
+
+\section{Design und Integration der App-Icons}
+
+Icons spielen eine wichtige Rolle in der Benutzeroberfläche. Sie helfen Benutzern, Funktionen schneller zu erkennen und machen die Anwendung visuell ansprechender.
+
+\subsection{Bootstrap Icons}
+
+Für das SmartBillConverter-Projekt wurden Bootstrap Icons verwendet. Diese Icon-Bibliothek ist kostenlos und passt gut zum Bootstrap-Framework, das bereits für das Layout verwendet wird.\footnote{Vgl. Bootstrap Team: \textit{Bootstrap Icons}, \url{https://icons.getbootstrap.com/}, abgerufen am 15.01.2025}
+
+Die wichtigsten Icons im Projekt sind:
+
+\begin{itemize}
+    \item \texttt{bi-cloud-upload}: Zeigt die Upload-Fläche an
+    \item \texttt{bi-file-earmark-pdf}: Kennzeichnet PDF-Dateien
+    \item \texttt{bi-file-earmark-image}: Kennzeichnet Bilddateien
+    \item \texttt{bi-eye}: Button für Vorschau anzeigen
+    \item \texttt{bi-download}: Button für Download
+    \item \texttt{bi-x-lg}: Button zum Entfernen
+    \item \texttt{bi-trash}: Button zum Löschen aller Dateien
+    \item \texttt{bi-files}: Icon für mehrere Dateien
+\end{itemize}
+
+\subsection{Drag-and-Drop Bereich}
+
+Der Upload-Bereich verwendet ein großes Cloud-Upload-Icon, das dem Benutzer signalisiert, dass er Dateien hierher ziehen kann:
+
+\begin{lstlisting}[language=HTML, caption={Upload-Icon in der Drag-and-Drop-Zone}]
+@if (selectedFiles.length === 0) {
+  <i class="bi bi-cloud-upload display-1 text-secondary mb-3"></i>
+  <h4>Dateien hier ablegen oder klicken zum Auswählen</h4>
+  <p class="text-muted">
+    PDF, PNG, JPG, BMP, TIFF, GIF - Max. 10MB pro Datei
+  </p>
+}
+\end{lstlisting}
+
+Wenn Dateien ausgewählt wurden, ändert sich das Icon zu einem Datei-Check-Icon oder einem Multi-Datei-Icon, je nachdem ob eine oder mehrere Dateien hochgeladen wurden.
+
+\subsection{Konsistente Icon-Verwendung}
+
+Alle Buttons verwenden Icons zusammen mit Text. Das macht die Buttons einfacher zu verstehen, besonders für Benutzer, die nicht so gut Deutsch können. Ein Auge-Icon beim Vorschau-Button ist international verständlich.

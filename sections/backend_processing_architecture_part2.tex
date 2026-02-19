@@ -337,7 +337,7 @@ public async Task<string> ExtractTextFromImageAsync(
             // OCR-Konfiguration fuer bessere Genauigkeit
             engine.SetVariable("tessedit_char_whitelist", 
                 "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz" +
-                "aeoeuaeoeueAeOeUess.,:-+/()euro$£¥ \n\r\t");
+                "aeoeuaeoeueAeOeUess.,:-+/()euro$GBP-YEN \n\r\t");
             engine.SetVariable("preserve_interword_spaces", "1");
             
             // ... Verarbeitung folgt
@@ -460,7 +460,7 @@ Der Try-Catch-Block im Service fängt alle Exceptions und wrappt sie in eine \te
 \subsection{Tesseract Sprachmodelle und Download-Automatisierung}
 Die Tesseract-Modelle sind nicht im NuGet-Package enthalten. Das Projekt enthält ein PowerShell-Script für den Download:
 
-\begin{lstlisting}[language=powershell, caption={download-tessdata.ps1 (Auszug)}, label={lst:tessdata_download}]
+\begin{lstlisting}[language=bash, caption={download-tessdata.ps1 (Auszug)}, label={lst:tessdata_download}]
 # Tesseract Traineddata Download Script
 $tessDataPath = ".\tessdata"
 $baseUrl = "https://github.com/tesseract-ocr/tessdata/raw/main"

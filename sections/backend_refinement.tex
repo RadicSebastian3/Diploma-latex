@@ -1,0 +1,125 @@
+\setauthor{Luis Schörgendorfer}
+\chapter{Backend-Refinement: Implementierung der Robustheitslogik}
+\label{chap:backend_refinement}
+
+Nach ersten Tests mit realen Rechnungen zeigte sich, dass das Backend bei bestimmten Rechnungsformaten Probleme hatte. Dieses Kapitel beschreibt die Verbesserungen, die im SmartBillConverter-Backend implementiert wurden, um diese Probleme zu beheben.
+
+\section{Problem: Fehlende Versandkosten-Erkennung}
+
+Bei der Verarbeitung von Rechnungen mit Versandkosten stellte sich heraus, dass diese oft nicht korrekt erkannt wurden. Das führte zu falschen Gesamtbeträgen im generierten XML.
+
+\subsection{Problem-Analyse}
+
+Das Backend verwendete die KI (Gemini), um Rechnungsdaten zu extrahieren. Die KI erkannte zwar Artikel und Preise, aber Versandkosten wurden oft übersehen. Typische Fälle:
+
+\begin{itemize}
+    \item Versandkosten als separate Zeile: "Versandkosten gesamt: 13,90 EUR"
+    \item Versandkosten in der Beschreibung: "DHL EUROPACK 20\% mit Betrag 25,00 EUR"
+    \item Differenz zwischen Material-Summe und Gesamtpreis war die Versandkosten
+\end{itemize}
+
+Das Problem war, dass die KI nach einem einzigen Keyword "Versandkosten" suchte, aber viele Rechnungen verwenden andere Begriffe wie "Porto", "Paketgebühren" oder "Versandart".
+
+\section{Multi-Keyword-Versandkosten-Erkennung}
+
+Die Lösung war, der KI eine Liste von Begriffen zu geben, nach denen sie suchen soll.
+
+\subsection{Erweiterter KI-Prompt}
+
+Der Prompt für die KI wurde angepasst:
+
+\begin{lstlisting}[language=C, caption={Versandkosten-Anweisungen im KI-Prompt}]
+- VERSANDKOSTEN: Suche nach Versand, Versandkosten, Paketgebühren, 
+  Porto etc. und extrahiere diese als shippingCost
+- Wenn Material-Summe und Gesamtpreis unterschiedlich sind, 
+  ist die Differenz oft die Versandkosten
+- BEISPIEL: Material: 151,10 + Versandkosten: 13,90 = Gesamt: 165,00
+  -> shippingCost=13.90
+- In priceAnalysis IMMER erwähnen ob Versandkosten gefunden wurden
+\end{lstlisting}
+
+Diese Anweisungen helfen der KI, verschiedene Schreibweisen zu erkennen. Wichtig ist auch der Hinweis auf die Differenzberechnung, wenn keine explizite Versandkostenzeile existiert.
+
+\subsection{Integration in die Datenstruktur}
+
+Im C\#-Backend wurde ein neues Feld hinzugefügt:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={ShippingCost-Property im Datenmodell}]
+public class InvoiceData
+{
+    public string InvoiceNumber { get; set; }
+    public decimal InvoiceAmount { get; set; }
+    public decimal? ShippingCost { get; set; }  // NEU
+    public string PriceAnalysis { get; set; }
+    // ... weitere Felder
+}
+\end{lstlisting}
+
+Das Fragezeichen bei \texttt{decimal?} bedeutet, dass der Wert \texttt{null} sein kann. Das ist wichtig, weil nicht alle Rechnungen Versandkosten haben.
+
+\section{Entwicklung eines universellen Fallback-Systems}
+
+Trotz verbesserter Versandkosten-Erkennung gab es Fälle, wo der berechnete Gesamtbetrag nicht mit dem tatsächlichen Rechnungsbetrag übereinstimmte. Ein universelles Fallback-System sollte diese Fälle abfangen.
+
+\subsection{Fallback-Logik}
+
+Die Idee ist einfach: Wenn die KI einen Gesamtbetrag erkannt hat, der höher ist als die Summe aller Artikel plus Versandkosten, dann verwende den von der KI erkannten Betrag. Das deutet darauf hin, dass die KI zusätzliche Kosten gefunden hat, die nicht in den Artikeln enthalten sind.
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Universelles Fallback-System}]
+// Berechne Summe aus allen Artikeln
+decimal totalBrutto = lineItems.Sum(item => 
+    RoundAmount(item.Quantity * item.UnitPrice));
+
+// Versandkosten hinzufügen, falls vorhanden
+if (data.ShippingCost.HasValue && data.ShippingCost.Value > 0)
+{
+    totalBrutto += RoundAmount(data.ShippingCost.Value);
+}
+
+// UNIVERSELLER FALLBACK
+if (data.InvoiceAmount > totalBrutto)
+{
+    _logger.LogInformation($"FALLBACK: InvoiceAmount ({data.InvoiceAmount}) > berechneter Betrag ({totalBrutto}) -> verwende InvoiceAmount");
+    totalBrutto = data.InvoiceAmount;
+}
+\end{lstlisting}
+
+Diese Logik stellt sicher, dass der Gesamtbetrag im XML nie niedriger ist als der tatsächliche Rechnungsbetrag. Das ist besonders wichtig für die rechtliche Korrektheit der generierten XML-Dateien.
+
+\subsection{Logging für Debugging}
+
+Für jeden Schritt gibt es Log-Ausgaben, die bei Problemen helfen:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Logging-Statements für Nachvollziehbarkeit}]
+_logger.LogInformation($"Versandkosten hinzugefügt: {shippingCost} EUR");
+_logger.LogWarning($"Keine Versandkosten gefunden! ShippingCost = {data.ShippingCost}");
+_logger.LogInformation($"FALLBACK ANGEWENDET: Neuer totalBrutto = {totalBrutto}");
+\end{lstlisting}
+
+Diese Logs erscheinen in der Konsole während der Verarbeitung und helfen zu verstehen, welche Entscheidungen das System getroffen hat.
+
+\section{Feature-Parität}
+
+Die Verbesserungen mussten sowohl für ebInterface als auch für ZUGFeRD funktionieren. Das SmartBillConverter-System unterstützt beide Formate.
+
+\subsection{Anwendung auf ebInterface}
+
+Für ebInterface wurde die Fallback-Logik im \texttt{LlmConversionService} implementiert. Dieser Service verarbeitet die KI-Antworten und erstellt das ebInterface-XML.
+
+Die wichtigsten Änderungen:
+\begin{itemize}
+    \item \texttt{ShippingCost}-Feld in der \texttt{InvoiceData}-Klasse
+    \item Versandkosten werden zum Gesamtbetrag addiert
+    \item Fallback-Check vor XML-Generierung
+    \item Log-Ausgaben für Transparenz
+\end{itemize}
+
+\subsection{Übertragung auf ZUGFeRD}
+
+Für ZUGFeRD wurde die gleiche Logik im \texttt{ZugferdService} implementiert. Da beide Services die gleiche \texttt{InvoiceData}-Klasse verwenden, mussten nur die XML-Generierungs-Methoden angepasst werden.
+
+Das stellt sicher, dass beide Formate die gleiche Qualität haben. Egal ob ein Benutzer ebInterface oder ZUGFeRD wählt, die Versandkosten werden korrekt erkannt und der Fallback greift bei Bedarf.
+
+\subsection{Einheitliche Fehlerbehandlung}
+
+Beide Services verwenden die gleichen Logging-Mechanismen. Das macht es einfacher, Probleme zu diagnostizieren, weil die Log-Ausgaben für beide Formate identisch aussehen.

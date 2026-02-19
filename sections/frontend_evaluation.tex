@@ -1,0 +1,148 @@
+\setauthor{Luis Schörgendorfer}
+\chapter{Evaluation mit realen Rechnungen (Frontend-Sicht)}
+\label{chap:frontend_evaluation}
+
+Nach der Implementierung wurde das SmartBillConverter-Frontend mit verschiedenen Rechnungstypen getestet. Dieses Kapitel beschreibt die Erfahrungen aus Frontend-Sicht und zeigt, wie die Benutzeroberfläche in verschiedenen Szenarien funktioniert.
+
+\section{Erfolgsquoten der UI-Fehlerbehandlung}
+
+Die Fehlerbehandlung ist ein wichtiger Teil der Benutzeroberfläche. Wenn etwas schief geht, sollten Benutzer sofort verstehen, was das Problem ist und wie sie es beheben können.
+
+\subsection{Dateiformat-Validierung}
+
+Die erste Fehlerquelle ist das Hochladen falscher Dateiformate. Das System akzeptiert nur PDFs und gängige Bildformate (PNG, JPEG, BMP, TIFF, GIF). Wenn ein Benutzer versucht, eine andere Datei hochzuladen, wird sofort eine Fehlermeldung angezeigt:
+
+\begin{lstlisting}[language=TypeScript, caption={Fehlerbehandlung bei falschen Dateiformaten}]
+const supportedTypes = ['application/pdf', 'image/png', 
+                       'image/jpeg', 'image/bmp', 
+                       'image/tiff', 'image/gif'];
+if (!supportedTypes.includes(file.type)) {
+  this.showFileTypeError(file.name, file.type);
+  return;
+}
+\end{lstlisting}
+
+Die Fehlermeldung enthält den Dateinamen und den erkannten Dateityp. Das hilft dem Benutzer zu verstehen, warum die Datei abgelehnt wurde. Die Meldung verschwindet nach 5 Sekunden automatisch, kann aber auch manuell geschlossen werden.
+
+\subsection{Backend-Fehler}
+
+Wenn das Backend einen Fehler meldet (z.B. weil die Rechnung nicht lesbar ist oder wichtige Daten fehlen), wird die Fehlermeldung vom Backend direkt an den Benutzer weitergegeben:
+
+\begin{lstlisting}[language=TypeScript, caption={Anzeige von Backend-Fehlern}]
+error: (error) => {
+  fileItem.status = 'error';
+  fileItem.errorMessage = error.error?.error || 'Unbekannter Fehler';
+  this.errorMessage = `Fehler beim Hochladen: ${error.error?.error}`;
+  this.showError = true;
+}
+\end{lstlisting}
+
+Die Fehlermeldung wird sowohl in der Dateiliste als auch in einem großen Alert-Banner oben angezeigt. Das stellt sicher, dass der Benutzer den Fehler nicht übersieht.
+
+\subsection{Netzwerkfehler}
+
+Bei Netzwerkproblemen (z.B. wenn das Backend nicht erreichbar ist) wird eine generische Fehlermeldung angezeigt. Diese Fehler sind seltener, aber wenn sie auftreten, ist es wichtig, dass der Benutzer informiert wird.
+
+\section{Benutzererfahrung bei der Konvertierung}
+
+Die Benutzererfahrung hängt stark von der Geschwindigkeit und Klarheit der Anwendung ab. Das SmartBillConverter-Frontend wurde so gestaltet, dass der Workflow möglichst einfach und verständlich ist.
+
+\subsection{Drei-Schritt-Workflow}
+
+Der typische Workflow besteht aus drei Schritten:
+
+\begin{enumerate}
+    \item \textbf{Format auswählen}: Benutzer wählen zwischen ebInterface und ZUGFeRD. Die farbige Hervorhebung (grün vs. rot) macht die Auswahl klar.
+    
+    \item \textbf{Dateien hochladen}: Benutzer laden eine oder mehrere Rechnungen hoch. Der Drag-and-Drop-Bereich ist groß und deutlich sichtbar. Die Vorschau zeigt sofort, welche Dateien ausgewählt wurden.
+    
+    \item \textbf{Konvertieren und Herunterladen}: Ein Klick auf "Konvertieren" startet die Verarbeitung. Die Progress Bars zeigen den Status jeder Datei. Nach erfolgreicher Konvertierung erscheint der Download-Button.
+\end{enumerate}
+
+Dieser Workflow ist selbsterklärend und benötigt keine Anleitung. Tests mit Benutzern zeigten, dass die meisten den Prozess ohne Hilfe durchführen konnten.
+
+\subsection{Verarbeitungsgeschwindigkeit}
+
+Die Verarbeitungsgeschwindigkeit hängt vom Backend ab, aber das Frontend gibt kontinuierlich Feedback:
+
+\begin{itemize}
+    \item Während des Uploads zeigt die Progress Bar den Status "Wird verarbeitet" mit animierten Streifen
+    \item Bei Multi-File-Verarbeitung sieht der Benutzer, welche Datei gerade verarbeitet wird
+    \item Nach Abschluss ändert sich die Progress Bar zu grün mit "Erfolgreich konvertiert"
+\end{itemize}
+
+Die meisten Rechnungen werden in 5-15 Sekunden verarbeitet. In dieser Zeit bleibt die Benutzeroberfläche reaktiv. Benutzer können weitere Dateien hinzufügen oder die Vorschau öffnen.
+
+\subsection{Multi-File-Verarbeitung}
+
+Die Möglichkeit, mehrere Dateien gleichzeitig hochzuladen, verbessert die Benutzererfahrung erheblich. Statt jede Rechnung einzeln zu konvertieren, können Benutzer alle Dateien auf einmal auswählen. Das System verarbeitet sie dann nacheinander und zeigt den Fortschritt für jede Datei an.
+
+Bei Tests mit 10 Rechnungen gleichzeitig funktionierte das System problemlos. Die sequentielle Verarbeitung verhindert, dass das Backend überlastet wird.
+
+\section{Beispiele der UI-Darstellung}
+
+Die folgenden Abschnitte beschreiben typische Szenarien und wie die Benutzeroberfläche darauf reagiert.
+
+\subsection{Erfolgreiche Konvertierung}
+
+Nach erfolgreicher Konvertierung zeigt die Benutzeroberfläche:
+
+\begin{itemize}
+    \item \textbf{Grüne Progress Bar} (100\% gefüllt)
+    \item \textbf{Status-Text}: "Erfolgreich konvertiert" in grüner Schrift
+    \item \textbf{Download-Button}: Ein grüner Button mit Download-Icon erscheint neben der Datei
+    \item \textbf{Dateiname}: Der XML-Dateiname wird aus der Rechnungsnummer und dem Format zusammengesetzt (z.B. \texttt{ebinterface\_invoice\_123.xml})
+\end{itemize}
+
+Der Benutzer kann sofort das XML herunterladen oder weitere Dateien verarbeiten. Die erfolgreiche Konvertierung ist eindeutig durch die grüne Farbe erkennbar.
+
+\subsection{Fehlerfall}
+
+Wenn die Konvertierung fehlschlägt, ändert sich die Darstellung:
+
+\begin{itemize}
+    \item \textbf{Rote Progress Bar} (auf 0\% zurückgesetzt)
+    \item \textbf{Status-Text}: "Fehler aufgetreten" in roter Schrift
+    \item \textbf{Fehlermeldung}: Die genaue Fehlermeldung vom Backend wird unter dem Status angezeigt
+    \item \textbf{Alert-Banner}: Zusätzlich erscheint oben ein rotes Banner mit der Fehlermeldung
+\end{itemize}
+
+Die Fehlermeldung erklärt, was schief gelaufen ist. Typische Fehler sind "Rechnung konnte nicht gelesen werden" oder "Rechnungsnummer fehlt". Der Benutzer kann die fehlerhafte Datei entfernen und eine andere versuchen.
+
+\subsection{Vorschau-Funktion}
+
+Die Vorschau-Funktion erlaubt es, hochgeladene Dateien vor der Konvertierung zu überprüfen:
+
+\begin{itemize}
+    \item \textbf{PDF-Vorschau}: PDFs werden mit dem ng2-pdf-viewer angezeigt. Benutzer können durch die Seiten navigieren und zoomen.
+    \item \textbf{Bild-Vorschau}: Bilder werden in Originalgröße angezeigt, automatisch skaliert auf die verfügbare Fläche.
+    \item \textbf{Modal-Dialog}: Die Vorschau erscheint in einem großen Overlay, das den Rest der Seite abdunkelt.
+\end{itemize}
+
+Die Vorschau ist nützlich, um sicherzustellen, dass die richtige Datei hochgeladen wurde. Ein Klick außerhalb des Modals oder auf den Schließen-Button beendet die Vorschau.
+
+\subsection{Multi-File-Ansicht}
+
+Wenn mehrere Dateien hochgeladen wurden, zeigt die Benutzeroberfläche:
+
+\begin{itemize}
+    \item \textbf{Karten-Header}: "X Dateien (Y MB gesamt)" mit Gesamt-Entfernen-Button
+    \item \textbf{Liste der Dateien}: Jede Datei als eigener Eintrag mit Icon, Name, Größe
+    \item \textbf{Individuelle Progress Bars}: Jede Datei hat ihre eigene Fortschrittsanzeige
+    \item \textbf{Aktions-Buttons}: Pro Datei gibt es Buttons für Vorschau, Download und Entfernen
+\end{itemize}
+
+Wenn die Verarbeitung läuft, werden die Dateien nacheinander bearbeitet. Die gerade aktive Datei zeigt den animierten "Wird verarbeitet"-Status, alle anderen warten oder sind bereits fertig.
+
+\subsection{Leerer Zustand}
+
+Wenn keine Dateien hochgeladen wurden, zeigt die Upload-Area:
+
+\begin{itemize}
+    \item \textbf{Cloud-Upload-Icon}: Ein großes Icon signalisiert, dass hier Dateien hochgeladen werden können
+    \item \textbf{Anweisungstext}: "Dateien hier ablegen oder klicken zum Auswählen"
+    \item \textbf{Format-Hinweis}: "PDF, PNG, JPG, BMP, TIFF, GIF - Max. 10MB pro Datei"
+    \item \textbf{Multi-File-Hinweis}: "Mehrere Dateien gleichzeitig möglich"
+\end{itemize}
+
+Diese Texte helfen neuen Benutzern zu verstehen, was sie tun müssen. Die Anweisungen sind kurz und klar formuliert.

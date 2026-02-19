@@ -453,7 +453,7 @@ Die Anwendung nutzt ASP.NET Cores Configuration-System für Environment-spezifis
 \subsection{appsettings.json: Strukturierte Konfiguration}
 Die Hauptkonfiguration ist in \texttt{appsettings.json}:
 
-\begin{lstlisting}[language=json, caption={appsettings.json}, label={lst:appsettings}]
+\begin{lstlisting}[caption={appsettings.json}, label={lst:appsettings}]
 {
   "ConnectionStrings": {
     "DefaultConnection": "Host=localhost;Port=5432;Database=smartbill;Username=postgres;Password=mypassword"
@@ -617,7 +617,7 @@ Die Anwendung nutzt semantische HTTP-Statuscodes:
 
 Error-Responses haben ein konsistentes Format:
 
-\begin{lstlisting}[language=json, caption={Error-Response-Format}]
+\begin{lstlisting}[caption={Error-Response-Format}]
 {
   "error": "Kurze Fehlerbeschreibung",
   "details": "Detaillierte technische Info (optional)"
