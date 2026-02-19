@@ -3,11 +3,11 @@
 \chapter{Implementierung der Upload-Komponente und Multi-File-System}\label{chapter:upload-implementation}
 \end{spacing}
 
-Die Upload-Komponente ist das Hauptelement der SmartBillConverter-Anwendung. Sie steuert den gesamten Prozess vom Hochladen der Dateien bis zur Erstellung der XML-Dateien.
+Die Upload-Komponente ist das Hauptelement der im Rahmen dieses Projekts entwickelten SmartBillConverter-Anwendung. Sie steuert den gesamten Prozess vom Hochladen der Dateien bis zur Erstellung der XML-Dateien.
 
 \section{Entwicklung der Upload-Komponente mit Drag-and-Drop}
 
-Die Upload-Komponente wurde als eigenständige Angular-Komponente entwickelt. Sie nutzt die neue \texttt{@for}- und \texttt{@if}-Syntax von Angular 19 und \texttt{@ViewChild}, um auf HTML-Elemente im Template zuzugreifen.
+Die Upload-Komponente des \textit{SmartBillConverter}-Projekts wurde als eigenständige Angular-Komponente entwickelt. Sie nutzt die neue \texttt{@for}- und \texttt{@if}-Syntax von Angular 19 und \texttt{@ViewChild}, um auf HTML-Elemente im Template zuzugreifen.
 
 \subsection{Aufbau der Komponente}
 
@@ -33,7 +33,7 @@ export class UploadComponent {
 }
 \end{lstlisting}
 
-Der Parameter \texttt{standalone: true} bedeutet, dass die Komponente unabhängig funktioniert und nicht in ein zusätzliches Modul eingebunden werden muss. Das macht den Code übersichtlicher.
+Der Parameter \texttt{standalone: true} bedeutet, dass die Komponente unabhängig funktioniert und nicht in ein zusätzliches Modul eingebunden werden muss.\footnote{Vgl. Angular Documentation: \textit{Standalone Components}, \url{https://angular.io/guide/standalone-components}, abgerufen am 15.01.2025} Das macht den Code übersichtlicher.
 
 \subsection{Drag-and-Drop-Funktion}
 
@@ -113,11 +113,11 @@ private loadFilePreview(fileItem: FileUploadItem): void {
 }
 \end{lstlisting}
 
-Die HTML5 FileReader API bietet zwei Methoden: \texttt{readAsDataURL()} für Bilder (als Base64-String) und \texttt{readAsArrayBuffer()} für PDFs (als Binärdaten für den PDF-Viewer).
+Die HTML5 FileReader API bietet zwei Methoden: \texttt{readAsDataURL()} für Bilder (als Base64-String) und \texttt{readAsArrayBuffer()} für PDFs (als Binärdaten für den PDF-Viewer).\footnote{Vgl. MDN Web Docs: \textit{FileReader API}, \url{https://developer.mozilla.org/en-US/docs/Web/API/FileReader}, abgerufen am 15.01.2025}
 
 \section{PDF-Vorschau anzeigen}
 
-Für die PDF-Vorschau wird die Bibliothek \texttt{ng2-pdf-viewer} verwendet.
+Die Anzeige der hochgeladenen PDFs erfolgt direkt im Browser. Dafür wird die Bibliothek \texttt{ng2-pdf-viewer} verwendet, die eine komfortable Vorschau mit Zoom- und Navigationsfunktionen bietet.
 
 \subsection{Einbindung des PDF-Viewers}
 
@@ -175,7 +175,7 @@ togglePreview(): void {
 }
 \end{lstlisting}
 
-Die Methode \texttt{URL.revokeObjectURL()} gibt Speicher frei, der von \texttt{URL.createObjectURL()} belegt wurde. Das ist wichtig, weil Browser diese URLs sonst bis zum Schließen der Seite speichern.
+Die Methode \texttt{URL.revokeObjectURL()} gibt Speicher frei, der von \texttt{URL.createObjectURL()} belegt wurde.\footnote{Vgl. MDN Web Docs: \textit{URL.createObjectURL()}, \url{https://developer.mozilla.org/en-US/docs/Web/API/URL/createObjectURL}, abgerufen am 15.01.2025} Das ist wichtig, weil Browser diese URLs sonst bis zum Schließen der Seite speichern.
 
 
 
@@ -198,7 +198,7 @@ interface FileUploadItem {
 
 Der Status kann vier Werte haben: \texttt{pending} (wartet auf Verarbeitung), \texttt{processing} (wird gerade verarbeitet), \texttt{completed} (erfolgreich abgeschlossen) oder \texttt{error} (Fehler aufgetreten). TypeScript prüft automatisch, dass nur diese Werte verwendet werden.
 
-Anstelle eines Enums wurde ein Union-Type verwendet. Das hat folgende Vorteile: Einfacherer Vergleich mit Strings, kleinere Dateigröße und einfachere Umwandlung in JSON.
+Anstelle eines Enums wurde ein Union-Type verwendet.\footnote{Vgl. TypeScript Documentation: \textit{Union Types}, \url{https://www.typescriptlang.org/docs/handbook/2/everyday-types.html#union-types}, abgerufen am 15.01.2025} Das hat folgende Vorteile: Einfacherer Vergleich mit Strings, kleinere Dateigröße und einfachere Umwandlung in JSON.
 
 \subsection{Dateien verwalten}
 
@@ -409,7 +409,7 @@ export class InvoiceService {
 }
 \end{lstlisting}
 
-Die \texttt{FormData}-API ermöglicht das Hochladen von Dateien per HTTP POST. Der \texttt{Observable}-Ansatz von Angular's \texttt{HttpClient} ermöglicht asynchrone Verarbeitung mit RxJS-Operatoren wie \texttt{map}, \texttt{catchError} und \texttt{retry}.
+Die \texttt{FormData}-API ermöglicht das Hochladen von Dateien per HTTP POST.\footnote{Vgl. MDN Web Docs: \textit{FormData}, \url{https://developer.mozilla.org/en-US/docs/Web/API/FormData}, abgerufen am 15.01.2025} Der \texttt{Observable}-Ansatz von Angular's \texttt{HttpClient} ermöglicht asynchrone Verarbeitung mit RxJS-Operatoren wie \texttt{map}, \texttt{catchError} und \texttt{retry}.
 
 \subsection{Fehler behandeln}
 

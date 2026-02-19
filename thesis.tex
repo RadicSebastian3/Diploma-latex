@@ -66,49 +66,87 @@
 \pagenumbering{arabic}
 \pagestyle{scrheadings}
 
+% ====================================================================
+% Gemeinsame Teile
+% ====================================================================
+
 \begin{spacing}{1}
 \chapter{Einleitung}\label{chapter:introduction}
 \end{spacing}
 \input{./sections/introduction}
 
-\begin{spacing}{1}
-\chapter{Umfeldanalyse}
-\end{spacing}
-\input{./sections/related_work}
+% ====================================================================
+% Teil A: Eigenanteil Sebastian (Backend, Datenverarbeitung & Analyse)
+% ====================================================================
 
-\begin{spacing}{1}
-\chapter{Technologien}\label{chapter:tech}
-\end{spacing}
-\input{./sections/technologies}
+\part{Theoretische Grundlagen}
 
-% Theoretical foundations (Sebastian Radic)
 \input{./sections/theoretical_foundation_sebastian}
 
 % Backend Processing Architecture (Sebastian Radic)
-\input{./sections/backend_processing_architecture}
+\input{./sections/backend_processing_architecture_part1}
+\input{./sections/backend_processing_architecture_part2}
+\input{./sections/backend_processing_architecture_part3}
 
-% Frontend Requirements Analysis (Luis Schoergendorfer)
+\part{Systemarchitektur und Design}
+
+\input{./sections/systemarchitektur}
+
+\input{./sections/technologie_stack}
+
+\part{Implementierung (Backend)}
+
+\input{./sections/backend_struktur}
+
+\input{./sections/pdf_extraktion}
+
+\input{./sections/ocr_pipeline}
+
+\input{./sections/ki_normalisierung}
+
+\input{./sections/ebinterface_generierung}
+
+\input{./sections/zugferd_generierung}
+
+% ====================================================================
+% Teil B: Eigenanteil Luis (Frontend, UI/UX & Backend-Refinement)
+% ====================================================================
+
+\part{Frontend-Anforderungsanalyse und Architektur}
+
 \input{./sections/frontend_requirements_analysis}
 
-% Frontend Architecture & Technology Stack (Luis Schoergendorfer)
 \input{./sections/frontend_architecture_technology}
 
-% Frontend Implementation: Upload Component (Luis Schoergendorfer)
+\part{Implementierung (Frontend \& Backend-Refinement)}
+
 \input{./sections/frontend_implementation_upload}
 
-\begin{spacing}{1}
-\chapter{Umsetzung}\label{chapter:implementation}
-\end{spacing}
-\input{./sections/implementation}
+\input{./sections/frontend_uiux}
 
-\begin{spacing}{1}
-\chapter{Zusammenfassung}
-\end{spacing}
-\input{./sections/summary}
+\input{./sections/frontend_backend_anbindung}
+
+\input{./sections/backend_refinement}
+
+\part{Optimierung und Ergebnisse (Frontend)}
+
+\input{./sections/frontend_performance}
+
+\input{./sections/frontend_evaluation}
+
+% ====================================================================
+% Gemeinsame Teile (Abschluss)
+% ====================================================================
+
+\part{Ergebnisse, Diskussion und Ausblick}
+
+\input{./sections/grenzen_zukunft}
+
+\input{./sections/schlussbetrachtung}
 
 \newpage
 \pagenumbering{Roman}
-\setcounter{page}{\value{RPages}}
+\setcounter{page}{8}
 \input{glossary}
 %\setlength{\glsdescwidth}{0.8\linewidth}
 \glsnogroupskiptrue

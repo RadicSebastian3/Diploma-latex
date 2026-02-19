@@ -7,8 +7,10 @@ Die Wahl des richtigen Technologie-Stacks ist wichtig für den Projekterfolg. Di
 \section{Projektinitialisierung mit Angular CLI}
 \label{sec:angular_project_init}
 
+Die Initialisierung des Projekts umfasst die Auswahl des passenden Frameworks und das Setup der Entwicklungsumgebung. Diese Entscheidungen beeinflussen die gesamte Entwicklung.
+
 \subsection{Framework-Evaluation}
-Die Wahl fiel auf Angular 19 aus folgenden Gründen:
+Für das \textit{SmartBillConverter}-Frontend fiel die Wahl auf Angular 19 aus folgenden Gründen:
 
 \begin{itemize}
     \item \textbf{Firmenanforderungen}: Das Partnerunternehmen gab keine konkrete Framework-Vorgabe, sondern ermöglichte eine freie Technologiewahl für das Frontend.
@@ -30,6 +32,8 @@ Der Befehl \texttt{ng serve} startet einen Entwicklungsserver mit Hot Module Rep
 
 \section{Auswahl der Bibliotheken}
 \label{sec:library_selection}
+
+Zusätzlich zum Angular-Framework werden externe Bibliotheken für spezifische Funktionen benötigt. Die wichtigsten Bibliotheken sind Bootstrap für das Styling und ng2-pdf-viewer für die PDF-Anzeige.
 
 \subsection{Bootstrap 5.3.7}
 Bootstrap wurde als CSS-Framework gewählt, weil es im schulischen Kontext bereits verwendet wurde und somit Vorkenntnisse im Umgang mit dem Grid-System, UI-Komponenten und Utility-Klassen vorhanden waren. Dies beschleunigte die Frontend-Entwicklung erheblich.\footnote{Vgl. Bootstrap Team: \textit{Bootstrap 5 Documentation}, \url{https://getbootstrap.com/docs/5.3/}, abgerufen am 15.01.2025}
@@ -58,7 +62,7 @@ Template-Integration:
 \section{Projektstruktur}
 \label{sec:project_structure}
 
-Angular folgt einer modularen Architektur mit Komponenten, Services und Routing:
+Das \textit{SmartBillConverter}-Frontend folgt der modularen Angular-Architektur mit Komponenten, Services und Routing:
 
 \begin{lstlisting}[caption={Projektstruktur smart-bill-ui}]
 src/app/
@@ -79,7 +83,7 @@ src/app/
 \end{lstlisting}
 
 \subsection{Komponenten-Architektur}
-Die Anwendung besteht aus drei Hauptkomponenten:
+Die \textit{SmartBillConverter}-Anwendung besteht aus drei Hauptkomponenten:
 
 \begin{itemize}
     \item \textbf{UploadComponent}: Datei-Upload via Drag \& Drop oder File-Input. Unterstützt Multi-File-Upload und zeigt Fortschrittsbalken. Validiert Dateitypen (PDF, PNG, JPEG) und Größenlimits.
@@ -114,7 +118,7 @@ export class InvoiceService {
 Der Service funktioniert folgendermaßen:
 
 \begin{itemize}
-    \item \textbf{@Injectable}: Macht den Service für andere Komponenten verfügbar. \texttt{providedIn: 'root'} bedeutet, dass es nur eine Instanz im gesamten Projekt gibt.
+    \item \textbf{@Injectable}: Macht den Service für andere Komponenten verfügbar. \texttt{providedIn: 'root'} bedeutet, dass es nur eine Instanz im gesamten Projekt gibt.\footnote{Vgl. Angular Documentation: \textit{Injectable Decorator}, \url{https://angular.io/api/core/Injectable}, abgerufen am 15.01.2025}
     \item \textbf{apiUrl}: Speichert die Backend-Adresse (\texttt{http://localhost:5000/api}). Alle Anfragen gehen an diese URL.
     \item \textbf{constructor}: Bekommt den \texttt{HttpClient} automatisch von Angular bereitgestellt. Damit können HTTP-Anfragen (GET, POST) gesendet werden.
     \item \textbf{uploadInvoice}: Erstellt ein \texttt{FormData}-Objekt (benötigt für Datei-Uploads), hängt die Datei an und sendet sie per POST an \texttt{/api/upload}. Gibt ein \texttt{Observable} zurück, das später die Antwort vom Server liefert.
@@ -126,7 +130,7 @@ Das \texttt{Observable}-Pattern ermöglicht asynchrone Datenverarbeitung: Die Ko
 \section{Routing-Konfiguration}
 \label{sec:routing_config}
 
-Das Routing definiert, welche Komponente bei welcher URL angezeigt wird:
+Das Routing steuert die Navigation zwischen den verschiedenen Seiten der Anwendung. Es definiert, welche Komponente bei welcher URL angezeigt wird:
 
 \begin{lstlisting}[language=TypeScript, caption={Routing in app.routes.ts}]
 export const routes: Routes = [
@@ -158,7 +162,7 @@ navigateToProcessing(invoiceId: number): void {
 }
 \end{lstlisting}
 
-Hier wird der \texttt{Router}-Service verwendet, um per Code zu einer anderen Seite zu wechseln. Die Methode \texttt{navigate()} bekommt ein Array mit dem Pfad und den Parametern (z.B. \texttt{['/processing', 123]} wird zu \texttt{/processing/123}).
+Hier wird der \texttt{Router}-Service verwendet, um per Code zu einer anderen Seite zu wechseln.\footnote{Vgl. Angular Documentation: \textit{Router}, \url{https://angular.io/api/router/Router}, abgerufen am 15.01.2025} Die Methode \texttt{navigate()} bekommt ein Array mit dem Pfad und den Parametern (z.B. \texttt{['/processing', 123]} wird zu \texttt{/processing/123}).
 
 \textbf{Im HTML-Template mit routerLink:}
 \begin{lstlisting}[language=html]

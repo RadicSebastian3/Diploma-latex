@@ -7,8 +7,10 @@ Die Entwicklung einer benutzerfreundlichen Weboberfläche ist ein zentraler Erfo
 \section{Definition der Systemanforderungen (Frontend)}
 \label{sec:frontend_system_requirements}
 
+Die Systemanforderungen beschreiben, welche Funktionen die Anwendung erfüllen muss und welche Qualitätsmerkmale sie aufweisen soll. Sie gliedern sich in funktionale und nicht-funktionale Anforderungen.
+
 \subsection{Funktionale Anforderungen}
-Die funktionalen Anforderungen an das Frontend definieren die Kernfunktionen des Systems:
+Die funktionalen Anforderungen an das Frontend des \textit{SmartBillConverter}-Projekts definieren die Kernfunktionen des Systems:
 
 \begin{itemize}
     \item \textbf{Dokumenten-Upload}: Unterstützt PDF-Dateien und Bildformate (PNG, JPEG, BMP, TIFF) per Drag-and-Drop oder Dateiauswahl. Mehrere Dateien können gleichzeitig hochgeladen werden (bis zu 10 MB pro Datei). Der Upload-Fortschritt wird angezeigt. Falsche Dateiformate werden mit einer Fehlermeldung abgelehnt. Nutzt HTML5 File API und FormData.
@@ -25,7 +27,7 @@ Die funktionalen Anforderungen an das Frontend definieren die Kernfunktionen des
 \end{itemize}
 
 \subsection{Nicht-funktionale Anforderungen}
-Diese Anforderungen definieren die Qualität und Benutzerfreundlichkeit der Anwendung:
+Diese Anforderungen definieren die Qualität und Benutzerfreundlichkeit der \textit{SmartBillConverter}-Anwendung:
 
 \begin{itemize}
     \item \textbf{Benutzerfreundlichkeit}: Die Bedienung soll selbsterklärend sein. Ein neuer Benutzer soll den Upload-Workflow in unter 60 Sekunden verstehen. Fehleingaben werden durch Validierung verhindert.\footnote{Vgl. Nielsen Norman Group: \textit{Drag and Drop: How to Design for Ease of Use}, \url{https://www.nngroup.com/articles/drag-drop/}, letzter Zugriff am 19.12.2025}
@@ -37,17 +39,17 @@ Diese Anforderungen definieren die Qualität und Benutzerfreundlichkeit der Anwe
 \section{Entity-Relationship-Diagramm (Datenmodell-Sicht)}
 \label{sec:frontend_erd}
 
-Das Entity-Relationship-Diagramm modelliert die zentrale Datenstruktur des Systems. Die \texttt{Invoice}-Entität repräsentiert eine verarbeitete Rechnungsdatei mit allen extrahierten Kerninformationen:
+Das Entity-Relationship-Diagramm modelliert die zentrale Datenstruktur des \textit{SmartBillConverter}-Systems. Die \texttt{Invoice}-Entität repräsentiert im entwickelten Projekt eine verarbeitete Rechnungsdatei mit allen extrahierten Kerninformationen:
 
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.5\textwidth]{pics/erd.png}
-\caption{Entity-Relationship-Diagramm der Invoice-Entität}
+\caption{Eigene Darstellung: Entity-Relationship-Diagramm der Invoice-Entität}
 \label{fig:erd_diagram}
 \end{figure}
 
 \subsection{Detaillierte Attributbeschreibung}
-Das Datenmodell folgt den gesetzlichen Anforderungen des österreichischen UStG. Die einzelnen Attribute der \texttt{Invoice}-Entität haben folgende Bedeutung:
+Das Datenmodell des \textit{SmartBillConverter}-Projekts folgt den gesetzlichen Anforderungen des österreichischen UStG. Die einzelnen Attribute der im Projekt implementierten \texttt{Invoice}-Entität (siehe Abbildung \ref{fig:erd_diagram}) haben folgende Bedeutung:
 
 \begin{itemize}
     \item \textbf{ID} (\texttt{int}, Primary Key): Eindeutige ID für jede Rechnung in der Datenbank. Wird automatisch hochgezählt.
@@ -77,7 +79,7 @@ Das Datenmodell folgt den gesetzlichen Anforderungen des österreichischen UStG.
 
 Diese Datenstruktur bildet die Grundlage für die persistente Speicherung aller verarbeiteten Rechnungen und erlaubt schnelle Abfragen, Reporting und Archivierung.
 
-Im Frontend wird ein TypeScript-Interface verwendet, das die Backend-Entität widerspiegelt:
+Im \textit{SmartBillConverter}-Frontend wird ein TypeScript-Interface verwendet, das die Backend-Entität des Projekts widerspiegelt:
 
 \begin{lstlisting}[language=TypeScript, caption={TypeScript Invoice-Interface}, label={lst:invoice_interface}]
 export interface Invoice {
@@ -98,19 +100,19 @@ export interface Invoice {
 \section{Use-Case-Diagramm (Benutzerinteraktionen)}
 \label{sec:frontend_use_cases}
 
-Use-Case-Diagramme visualisieren die Interaktionen zwischen Benutzern und dem System. Das folgende Diagramm zeigt die Hauptanwendungsfälle:
+Use-Case-Diagramme visualisieren die Interaktionen zwischen Benutzern und dem System. Abbildung \ref{fig:use_case_diagram} zeigt die Hauptanwendungsfälle des \textit{SmartBillConverter}-Projekts:
 
 \begin{figure}[htbp]
 \centering
 \includegraphics[width=0.8\textwidth]{pics/use-case-diagram.png}
-\caption{Use-Case-Diagramm des SmartBillConverter}
+\caption{Eigene Darstellung: Use-Case-Diagramm des SmartBillConverter}
 \label{fig:use_case_diagram}
 \end{figure}
 
 \subsection{Beschreibung der Use-Cases}
-Die Hauptanwendungsfälle werden im Folgenden detailliert beschrieben:
+Die in Abbildung \ref{fig:use_case_diagram} dargestellten Hauptanwendungsfälle des \textit{SmartBillConverter}-Systems werden im Folgenden detailliert beschrieben:
 
-\textbf{UC1: Import Invoice} -- Der primäre Use-Case ermöglicht das Hochladen von Rechnungsdokumenten. Der Benutzer wählt zwischen zwei Importvarianten:
+\textbf{UC1: Import Invoice} -- Der primäre Use-Case (siehe Abbildung \ref{fig:use_case_diagram}) ermöglicht das Hochladen von Rechnungsdokumenten. Der Benutzer wählt zwischen zwei Importvarianten:
 
 \begin{itemize}
     \item \textbf{UC1.1: via PDF} (\texttt{<<extend>>}): Import einer digitalisierten PDF-Rechnung. Dies ist der Standardfall für elektronisch erstellte Rechnungen. Das System extrahiert Text mittels PDF-Parser (PDF.js) ohne OCR-Verarbeitung.
@@ -135,13 +137,13 @@ Der gesamte Workflow ist auf Einfachheit und Benutzerfreundlichkeit optimiert: F
 \section{Systemarchitektur (Frontend-Sicht)}
 \label{sec:frontend_architecture}
 
-Die Systemarchitektur folgt einer klassischen Drei-Schichten-Architektur mit klarer Trennung der Verantwortlichkeiten:
+Die Systemarchitektur des \textit{SmartBillConverter}-Projekts folgt einer klassischen Drei-Schichten-Architektur mit klarer Trennung der Verantwortlichkeiten:
 
 \begin{figure}[h!]
 \centering
 \includegraphics[width=\textwidth]{pics/system-architecture.png}
-\caption{Systemarchitektur des SmartBillConverter}
+\caption{Eigene Darstellung: Systemarchitektur des SmartBillConverter}
 \label{fig:system_architecture}
 \end{figure}
 
-Die Architektur besteht aus drei Schichten: (1) \textbf{Präsentationsschicht}: Angular-Webseite im Browser, (2) \textbf{Anwendungsschicht}: ASP.NET Core Web API mit Verarbeitungslogik, (3) \textbf{Datenschicht}: PostgreSQL-Datenbank. Der \texttt{InvoiceService} im Frontend verwaltet alle HTTP-Anfragen und nutzt RxJS Observables für asynchrone Datenverarbeitung.\footnote{Vgl. Angular Documentation: \textit{Observables in Angular}, \url{https://angular.io/guide/observables-in-angular}, letzter Zugriff am 19.12.2025} Der Ablauf: Benutzer lädt Datei hoch $\rightarrow$ Frontend prüft und sendet an Backend $\rightarrow$ Backend extrahiert Text (PDF-Parser oder OCR) und normalisiert mit KI $\rightarrow$ XML wird erstellt und zurückgesendet $\rightarrow$ Nutzer lädt XML herunter.
+Die Architektur (siehe Abbildung \ref{fig:system_architecture}) besteht aus drei Schichten: (1) \textbf{Präsentationsschicht}: Angular-Webseite im Browser, (2) \textbf{Anwendungsschicht}: ASP.NET Core Web API mit Verarbeitungslogik, (3) \textbf{Datenschicht}: PostgreSQL-Datenbank. Der \texttt{InvoiceService} im Frontend verwaltet alle HTTP-Anfragen und nutzt RxJS Observables für asynchrone Datenverarbeitung.\footnote{Vgl. Angular Documentation: \textit{Observables in Angular}, \url{https://angular.io/guide/observables-in-angular}, letzter Zugriff am 19.12.2025} Der Ablauf: Benutzer lädt Datei hoch $\rightarrow$ Frontend prüft und sendet an Backend $\rightarrow$ Backend extrahiert Text (PDF-Parser oder OCR) und normalisiert mit KI $\rightarrow$ XML wird erstellt und zurückgesendet $\rightarrow$ Nutzer lädt XML herunter.
