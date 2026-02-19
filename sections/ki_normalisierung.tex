@@ -1,17 +1,260 @@
-\setauthor{Sebastian Radić}
+\setauthor{Sebastian Radic}
 \chapter{KI-Normalisierung und Mapping}
 \label{chap:ki_normalisierung}
 
-\textit{[Dieses Kapitel wird von Sebastian Radić verfasst und beschreibt die KI-Normalisierung.]}
+Nachdem der Text aus einem PDF oder Scan extrahiert wurde, kommt der schwierigste Teil: aus unstrukturierten Textzeilen sollen strukturierte, maschinenlesbare Daten werden. Dafür wird ein Large Language Model eingesetzt. Dieses Kapitel beschreibt, wie der Prompt gestaltet ist, welche Modelle evaluiert wurden und wie die Antwort des Modells in die XML-Strukturen überführt wird.
 
 \section{Prompt-Strategien}
-\textit{[Wird von Sebastian Radić verfasst: Constraints, JSON-Schema]}
+\label{sec:prompt_strategien}
+
+\subsection{Das interne Datenmodell: InvoiceData}
+
+Zwischen LLM-Ausgabe und XML-Generierung liegt eine Zwischenstruktur: das \texttt{InvoiceData}-POCO. Das Modell ist absichtlich flach gebaut, damit das LLM ein einfaches JSON befüllen kann:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={InvoiceData Datenmodell}, label={lst:invoice_data}]
+public class InvoiceData
+{
+    public string? InvoiceNumber { get; set; }
+    public decimal InvoiceAmount { get; set; }
+    public DateTime InvoiceDate { get; set; }
+    public DateTime DueDate { get; set; }
+    public string? VatNumber { get; set; }
+    public string? IBAN { get; set; }
+    public decimal? ShippingCost { get; set; }
+    public string? BillerName { get; set; }
+    public string? BillerStreet { get; set; }
+    public string? BillerZIP { get; set; }
+    public string? BillerTown { get; set; }
+    public string? RecipientName { get; set; }
+    public string? RecipientStreet { get; set; }
+    public List<InvoiceItem>? Items { get; set; }
+    public bool IsNetto { get; set; } = false;
+    public string? PriceAnalysis { get; set; }
+}
+\end{lstlisting}
+
+Die \texttt{IsNetto}-Property löst ein konkretes Problem: Rechnungen können Beträge auf zwei Arten angeben — als Nettobetrag mit Mehrwertsteuer darauf, oder als Bruttobetrag der die Steuer schon enthält. Das LLM muss das erkennen und dem Backend melden, damit die Steuerberechnung stimmt.
+
+\subsection{Der System-Prompt}
+
+Der Prompt ist das eigentliche "Programm" für das Sprachmodell. Er kam erst nach vielen Iterationen zustande — jede Regel darin löst ein Problem, das in Tests aufgetaucht ist:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Gemini System-Prompt (Auszug)}, label={lst:system_prompt}]
+private string BuildSystemPrompt() => @"
+Du bist ein hochpraeziser Datenextraktions-Assistent fuer Rechnungen.
+
+KRITISCH - NETTO vs. BRUTTO:
+Setze 'isNetto': true wenn explizite Worte wie 'zzgl. MwSt.', 
+'Nettobetrag' oder separate Steuerzeilen forhanden sind.
+Setze 'isNetto': false wenn 'inkl. MwSt.', 'Bruttobetrag' steht.
+
+KRITISCH - ZAHLEN EXAKT LESEN:
+- 150,00 → 150.00  (nicht 15000.00!)
+- 2.000,00 → 2000.00 (Tausendertrennzeichen beachten!)
+- NIEMALS raten -- nur Werte die im Text stehen!
+
+Dokumentiere deine Netto/Brutto-Entscheidung in 'priceAnalysis'.
+Antworte NUR mit validem JSON.";
+\end{lstlisting}
+
+Beispiel für eine gelernte Regel: Ohne die explizite Dezimalstellen-Warnung hat das Modell aus \glqq 150,00\grqq{} regelmäßig \glqq 15000.00\grqq{} gemacht, weil es das deutsche Komma als Tausendertrennzeichen interpretiert hat.
+
+\subsection{JSON-Schema für strukturierten Output}
+
+Damit das Modell garantiert gültiges JSON zurückgibt, wird ein Schema mitgeschickt:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={JSON Schema Builder}, label={lst:json_schema_builder}]
+private object BuildJsonSchema()
+{
+    return new
+    {
+        type = "object",
+        properties = new
+        {
+            invoiceNumber = new { type = "string" },
+            invoiceDate   = new { type = "string", format = "date" },
+            invoiceAmount = new { type = "number" },
+            vatNumber     = new { type = "string" },
+            iban          = new { type = "string" },
+            billerName    = new { type = "string" },
+            billerStreet  = new { type = "string" },
+            billerZIP     = new { type = "string" },
+            billerTown    = new { type = "string" },
+            recipientName = new { type = "string" },
+            items = new
+            {
+                type  = "array",
+                items = new
+                {
+                    type       = "object",
+                    properties = new
+                    {
+                        position    = new { type = "integer" },
+                        description = new { type = "string" },
+                        quantity    = new { type = "number" },
+                        unitPrice   = new { type = "number" },
+                        totalPrice  = new { type = "number" },
+                        taxRate     = new { type = "number" }
+                    },
+                    required = new[] { "position","description","quantity",
+                                       "unitPrice","totalPrice","taxRate" }
+                }
+            },
+            isNetto       = new { type = "boolean" },
+            priceAnalysis = new { type = "string" }
+        },
+        required = new[] { "invoiceNumber","invoiceDate","invoiceAmount","isNetto" }
+    };
+}
+\end{lstlisting}
+
+Das Schema erzwingt Typsicherheit: \texttt{invoiceAmount} muss eine Zahl sein, kein String. \texttt{required}-Arrays definieren Pflichtfelder — das Modell kann kein JSON ohne \texttt{invoiceNumber} erzeugen.
 
 \section{Modelldiskussion}
-\textit{[Wird von Sebastian Radić verfasst: Gemini 2.5 Flash, Mistral, Qwen, Gemma]}
+\label{sec:modelldiskussion}
+
+Im Laufe des Projekts wurden mehrere Sprachmodelle für die Rechnungsextraktion getestet. Die Wahl des richtigen Modells hat großen Einfluss auf Genauigkeit, Geschwindigkeit und Kosten.
+
+\subsection{Google Gemini 2.0 Flash (eingesetzt)}
+
+Gemini 2.0 Flash ist das Modell, das am Ende im Projekt eingesetzt wird. Der Hauptgrund: es unterstützt \textit{Constrained Decoding} direkt in der API. Das bedeutet, man kann ein JSON-Schema mitschicken und das Modell kann buchstäblich kein Invalid-JSON erzeugen — auf Token-Ebene.
+
+\begin{table}[htbp]
+\centering
+\caption{Gemini 2.0 Flash -- Eigenschaften}
+\begin{tabular}{ll}
+\hline
+\textbf{Eigenschaft} & \textbf{Wert} \\
+\hline
+Kontext-Fenster & 1M Tokens \\
+JSON-Schema-Support & Nativ (response\_schema) \\
+Kosten & Kostenlos bis 15 req/min \\
+Antwortzeit & 2--5 Sekunden \\
+Netto/Brutto-Erkennung & Sehr gut \\
+\hline
+\end{tabular}
+\end{table}
+
+Der Free-Tier mit 15 Anfragen pro Minute ist für den Projektzweck ausreichend. In einem echten Produktionssystem wäre ein kostenpflichtiger Tier nötig.\footnote{Vgl. Google AI: \textit{Gemini API -- Rate Limits}, \url{https://ai.google.dev/gemini-api/docs/rate-limits}, letzter Zugriff am 06.01.2026}
+
+\subsection{Mistral 7B / Mistral Large}
+
+Mistral ist ein französisches Open-Source-Modell das auf selbst gehosteten Servern betrieben werden kann. Das wurde als interessante Alternative gesehen, weil damit der API-Key-Abhängigkeit von Google entgangen werden könnte.
+
+Das Problem: Mistral 7B hat beim Testen mit deutschen Rechnungen deutlich schlechtere Ergebnisse gezeigt als Gemini. Besonders die Netto/Brutto-Erkennung war unzuverlässig — das Modell hat das \texttt{isNetto}-Flag oft falsch gesetzt, selbst wenn es im Text klar stand. Mistral Large (das größere Modell) wäre besser, ist aber kostenpflichtig und bringt keinen Vorteil gegenüber Gemini.
+
+Ein weiterer Nachteil: Mistral unterstützt kein natives JSON-Schema wie Gemini. Man muss JSON via dem Prompt erzwingen (\glqq Antworte nur mit JSON\grqq), was öfter mal zu kaputten JSON-Antworten führt.
+
+\subsection{Qwen 2.5}
+
+Qwen ist ein Modell von Alibaba Cloud, das auf Chinesisch und Englisch trainiert ist aber auch gutes Multilingual-Verständnis hat. Es wurde kurz getestet weil es in Benchmarks sehr gute Extraction-Ergebnisse zeigt.
+
+Für das Projekt war es letztlich nicht geeignet: Die API ist in Europa langsamer (die Server stehen hauptsächlich in Asien), und die deutschen Steuerregeln (UStG-Rundungsvorschriften, österreichische UID-Formate) kennt es weniger gut als Gemini.
+
+\subsection{Gemma 2 (lokal)}
+
+Gemma ist Googles open-weights Modell, das lokal auf dem eigenen Rechner laufen kann — komplett offline. Das wäre ideal für Datenschutz, weil keine Rechnungsdaten an externe APIs geschickt werden.
+
+Das getestete Gemma 2B ist aber für die Aufgabe zu klein: Es halluziniert Felder die nicht im Text stehen, und die Steuerberechnungs-Logik versteht es nicht zuverlässig. Das 9B-Modell wäre besser, braucht aber eine GPU mit mindestens 16\,GB VRAM was in einer Schulumgebung nicht realistisch ist.
+
+\textbf{Fazit}: Gemini 2.0 Flash bleibt die beste Wahl für dieses Projekt wegen der nativen JSON-Schema-Unterstützung, guter Genauigkeit bei deutschen Dokumenten und dem kostenlosem Tier für Entwicklung und Tests.
 
 \section{Parsing und Validierung der KI-Ausgaben}
-\textit{[Wird von Sebastian Radić verfasst]}
+\label{sec:ki_parsing}
+
+\subsection{HTTP-Client und API-Aufruf}
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Gemini API-Aufruf}, label={lst:gemini_api_call}]
+var requestBody = new
+{
+    contents = new[] { new { role = "user",
+        parts = new[] { new { text = systemPrompt + "\n\n" + userPrompt } } } },
+    generationConfig = new
+    {
+        temperature        = 0.0,
+        candidateCount     = 1,
+        response_mime_type = "application/json",
+        response_schema    = BuildJsonSchema()
+    }
+};
+
+var response = await _httpClient.PostAsync(
+    $"{_apiEndpoint}?key={_apiKey}",
+    new StringContent(JsonSerializer.Serialize(requestBody), 
+                      Encoding.UTF8, "application/json"));
+
+if (!response.IsSuccessStatusCode)
+    throw new HttpRequestException($"Gemini API Fehler: {response.StatusCode}");
+\end{lstlisting}
+
+Die \texttt{generationConfig} mit \texttt{temperature = 0.0} macht das Modell so deterministisch wie möglich — bei gleicher Eingabe kommt immer die gleiche Ausgabe. Das ist wichtig für reproduzierbare Testergebnisse.
+
+\subsection{Response-Parsing}
+
+Die Antwort von Gemini kommt als JSON-Struktur mit mehreren Verschachtelungsebenen:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Gemini Response parsen}, label={lst:response_parsing}]
+private InvoiceData ParseGeminiResponse(string responseBody)
+{
+    var doc = JsonDocument.Parse(responseBody);
+    var text = doc.RootElement
+        .GetProperty("candidates")[0]
+        .GetProperty("content")
+        .GetProperty("parts")[0]
+        .GetProperty("text")
+        .GetString();
+
+    return JsonSerializer.Deserialize<InvoiceData>(text ?? "{}",
+        new JsonSerializerOptions { PropertyNameCaseInsensitive = true })
+        ?? new InvoiceData();
+}
+\end{lstlisting}
+
+\texttt{PropertyNameCaseInsensitive = true} ist nötig, weil das LLM manchmal \texttt{invoiceNumber} und manchmal \texttt{InvoiceNumber} zurückgibt. Der Fallback \texttt{new InvoiceData()} verhindert NullPointerException bei leerem oder kaputtem JSON.
 
 \section{Mapping auf Domänen- und XML-Modelle}
-\textit{[Wird von Sebastian Radić verfasst]}
+\label{sec:ki_mapping}
+
+\subsection{Netto/Brutto-Berechnung}
+
+Das ist der kritische Teil des Mappings. Das LLM hat bestimmt ob die Rechnung Netto- oder Brutto-Beträge enthält — jetzt müssen die richtigen Formeln angewendet werden:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Steuerberechnung Netto vs. Brutto}, label={lst:tax_calculation}]
+foreach (var item in data.Items)
+{
+    decimal netAmount, taxAmount, bruttoAmount;
+
+    if (data.IsNetto)
+    {
+        // totalPrice vom LLM ist der Nettobetrag
+        netAmount    = RoundAmount(item.TotalPrice);
+        taxAmount    = RoundAmount(netAmount * item.TaxRate / 100);
+        bruttoAmount = RoundAmount(netAmount + taxAmount);
+    }
+    else
+    {
+        // totalPrice vom LLM ist der Bruttobetrag
+        bruttoAmount = RoundAmount(item.TotalPrice);
+        netAmount    = RoundAmount(bruttoAmount / (1 + item.TaxRate / 100));
+        taxAmount    = RoundAmount(bruttoAmount - netAmount);
+    }
+
+    _logger.LogInformation("Item {Pos}: Netto={Net}, USt={Tax}, Brutto={Brutto}",
+        item.Position, netAmount, taxAmount, bruttoAmount);
+}
+
+private decimal RoundAmount(decimal amount) =>
+    Math.Round(amount, 2, MidpointRounding.AwayFromZero);
+\end{lstlisting}
+
+Die Formeln:
+\begin{itemize}
+    \item \textbf{Netto}: $\text{Brutto} = \text{Netto} \times \left(1 + \frac{\text{Steuersatz}}{100}\right)$
+    \item \textbf{Brutto}: $\text{Netto} = \dfrac{\text{Brutto}}{1 + \frac{\text{Steuersatz}}{100}}$
+\end{itemize}
+
+\texttt{RoundAmount} rundet kaufmännisch (\texttt{MidpointRounding.AwayFromZero}): 2,125 wird auf 2,13 gerundet, nicht auf 2,12. Das entspricht den steuerrechtlichen Anforderungen.\footnote{Vgl. § 16 UStG: \textit{Bemessungsgrundlage}, Rundung auf zwei Nachkommastellen}
+
+\subsection{Von InvoiceData zu XML}
+
+Das befüllte \texttt{InvoiceData}-Objekt dient als gemeinsame Quelle für beide XML-Formate. ebInterface bekommt die flachen Felder direkt, ZUGFeRD braucht eine tiefere Verschachtelung über mehrere Objekte. Das \texttt{InvoiceData}-Modell wurde absichtlich so gestaltet, dass beide Mappings ohne Datenverlust möglich sind — die Biller/Recipient-Trennung deckt die Anforderungen beider Standards ab.\footnote{Vgl. ebInterface 6.1 Specification: \textit{Austrian Standard}, Bundesrechenzentrum, 2022, Abschnitt 4.3}

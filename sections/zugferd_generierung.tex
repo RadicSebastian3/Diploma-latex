@@ -1,14 +1,197 @@
-\setauthor{Sebastian Radić}
+\setauthor{Sebastian Radic}
 \chapter{Generierung von ZUGFeRD 2.3 / EN 16931}
 \label{chap:zugferd_generierung}
 
-\textit{[Dieses Kapitel wird von Sebastian Radić verfasst und beschreibt die ZUGFeRD-Generierung.]}
+ZUGFeRD ist vom Aufbau her deutlich komplizierter als ebInterface. Die CII-XML-Struktur (Cross Industry Invoice) ist so tief verschachtelt, dass es mehrere C\#-Klassen braucht, um einen einzigen Preis zu beschreiben. Dieses Kapitel erklärt, wie das Mapping und die Serialisierung im Projekt umgesetzt wurden.
 
 \section{CII-Mapping}
-\textit{[Wird von Sebastian Radić verfasst: Dokumentkontext, Parteien, Positionen, Steuern]}
+\label{sec:cii_mapping}
+
+\subsection{ZUGFeRD-spezifisches Datenmodell}
+
+Für ZUGFeRD gibt es ein eigenes Datenmodell, das von \texttt{InvoiceData} befüllt wird:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={ZUGFeRD Datenmodell}, label={lst:zugferd_model}]
+public class ZugferdInvoiceData
+{
+    public string InvoiceNumber { get; set; } = string.Empty;
+    public DateTime InvoiceDate { get; set; }
+    public decimal TotalAmount { get; set; }
+    public decimal NetAmount { get; set; }
+    public decimal TaxAmount { get; set; }
+    public string Currency { get; set; } = "EUR";
+    public ZugferdParty Seller { get; set; } = new();
+    public ZugferdParty Buyer { get; set; } = new();
+    public List<ZugferdLineItem> LineItems { get; set; } = new();
+    public string? IBAN { get; set; }
+    public decimal TaxRate { get; set; } = 20.0m;
+    public bool IsNetto { get; set; } = false;
+}
+
+public class ZugferdParty
+{
+    public string Name { get; set; } = string.Empty;
+    public string Street { get; set; } = string.Empty;
+    public string ZIP { get; set; } = string.Empty;
+    public string City { get; set; } = string.Empty;
+    public string Country { get; set; } = "AT";
+    public string? VatNumber { get; set; }
+}
+\end{lstlisting}
+
+Das Modell verwendet \texttt{Seller}/\texttt{Buyer} statt \texttt{Biller}/\texttt{Recipient} — das ist die ZUGFeRD-typische Benennung.
+
+\subsection{XML-Namespaces}
+
+ZUGFeRD verwendet vier verschiedene XML-Namespaces für verschiedene Teile des Schemas:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={ZUGFeRD Namespaces}, label={lst:zugferd_namespaces}]
+public static class Namespaces
+{
+    public const string Rsm =
+        "urn:un:unece:uncefact:data:standard:CrossIndustryInvoice:100";
+    public const string Ram =
+        "urn:un:unece:uncefact:data:standard:ReusableAggregateBusinessInformationEntity:100";
+    public const string Udt =
+        "urn:un:unece:uncefact:data:standard:UnqualifiedDataType:100";
+    public const string Qdt =
+        "urn:un:unece:uncefact:data:standard:QualifiedDataType:100";
+}
+
+[XmlRoot("CrossIndustryInvoice", Namespace = Namespaces.Rsm)]
+public class CrossIndustryInvoice
+{
+    [XmlNamespaceDeclarations]
+    public XmlSerializerNamespaces Xmlns { get; set; } =
+        new XmlSerializerNamespaces(new[]
+        {
+            new XmlQualifiedName("rsm", Namespaces.Rsm),
+            new XmlQualifiedName("ram", Namespaces.Ram),
+            new XmlQualifiedName("udt", Namespaces.Udt),
+            new XmlQualifiedName("qdt", Namespaces.Qdt)
+        });
+
+    [XmlElement("ExchangedDocumentContext", Namespace = Namespaces.Rsm)]
+    public ExchangedDocumentContextType ExchangedDocumentContext { get; set; } = new();
+
+    [XmlElement("ExchangedDocument", Namespace = Namespaces.Rsm)]
+    public ExchangedDocumentType ExchangedDocument { get; set; } = new();
+
+    [XmlElement("SupplyChainTradeTransaction", Namespace = Namespaces.Rsm)]
+    public SupplyChainTradeTransactionType SupplyChainTradeTransaction { get; set; } = new();
+}
+\end{lstlisting}
+
+\texttt{[XmlNamespaceDeclarations]} definiert die Namespace-Präfixe (rsm, ram, udt, qdt). Jedes \texttt{[XmlElement]} muss den passenden Namespace angeben, sonst scheitert die Validierung.
+
+\subsection{Profil-Deklaration (EN 16931)}
+
+ZUGFeRD definiert Profile. Das Projekt targetiert EN 16931 (COMFORT):
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Profil-Deklaration}, label={lst:zugferd_profile}]
+public class DocumentContextParameterType
+{
+    [XmlElement("ID", Namespace = Namespaces.Ram)]
+    public string ID { get; set; } =
+        "urn:cen.eu:en16931:2017#compliant#urn:factur-x.eu:1p0:extended";
+}
+\end{lstlisting}
+
+Dieses Feld teilt dem Empfänger mit welches ZUGFeRD-Profil verwendet wird. Der Wert \texttt{urn:cen.eu:en16931:2017} bedeutet, dass das Dokument der europäischen Norm EN 16931 entspricht, was für Rechnungen an Behörden (B2G) Pflicht ist.\footnote{Vgl. European Commission: \textit{Directive 2014/55/EU on electronic invoicing}, \url{https://ec.europa.eu/digital-building-blocks/wikis/display/DIGITAL/eInvoicing}, letzter Zugriff am 06.01.2026}
+
+\subsection{Tiefe Verschachtelung: Preise in CII}
+
+Das CII-Modell ist deutlich tiefer verschachtelt als ebInterface. Um einen einzigen Preis zu setzen, müssen vier Klassen durchlaufen werden:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={CII Preis-Verschachtelung}, label={lst:cii_nesting}]
+// 4 Ebenen fuer einen einzigen Preis:
+// LineItem -> SpecifiedLineTradeAgreement
+//          -> NetPriceProductTradePrice
+//          -> ChargeAmount.Value
+public class TradePriceType
+{
+    [XmlElement("ChargeAmount", Namespace = Namespaces.Ram)]
+    public AmountType ChargeAmount { get; set; } = new();
+}
+
+public class AmountType
+{
+    [XmlAttribute("currencyID")]
+    public string Currency { get; set; } = "EUR";
+
+    [XmlText]
+    public decimal Value { get; set; }
+}
+\end{lstlisting}
+
+Das ist der Preis für den universellen Ansatz von UN/CEFACT. Im Projekt wurden Helper-Methoden geschrieben, die diese Tiefe verbergen und das Befüllen einfacher machen.
 
 \section{Serialisierung, Namespace/Order-Postprocessing}
-\textit{[Wird von Sebastian Radić verfasst]}
+\label{sec:zugferd_serialisierung}
+
+Die Serialisierung läuft ähnlich wie bei ebInterface, aber das Namespace-Handling ist komplexer:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={ZUGFeRD Serialisierung}, label={lst:zugferd_serialization}]
+private string SerializeToZugferdXml(CrossIndustryInvoice invoice)
+{
+    var serializer = new XmlSerializer(typeof(CrossIndustryInvoice));
+    var settings = new XmlWriterSettings
+    {
+        Indent            = true,
+        IndentChars       = "  ",
+        Encoding          = Encoding.UTF8,
+        OmitXmlDeclaration = false
+    };
+
+    using var stringWriter = new Utf8StringWriter();
+    using var xmlWriter    = XmlWriter.Create(stringWriter, settings);
+    serializer.Serialize(xmlWriter, invoice);
+    return stringWriter.ToString();
+}
+\end{lstlisting}
+
+Das Besondere bei ZUGFeRD: Die Reihenfolge der XML-Elemente innerhalb \texttt{SupplyChainTradeTransaction} ist vom Standard vorgegeben. \texttt{[XmlElement(Order = ...)]} steuert die Reihenfolge bei der Serialisierung:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Element-Reihenfolge steuern}, label={lst:xml_order}]
+public class SupplyChainTradeTransactionType
+{
+    [XmlElement("IncludedSupplyChainTradeLineItem", Order = 1, 
+                 Namespace = Namespaces.Ram)]
+    public List<SupplyChainTradeLineItemType> LineItems { get; set; } = new();
+
+    [XmlElement("ApplicableHeaderTradeAgreement", Order = 2, 
+                 Namespace = Namespaces.Ram)]
+    public HeaderTradeAgreementType TradeAgreement { get; set; } = new();
+
+    [XmlElement("ApplicableHeaderTradeSettlement", Order = 3, 
+                 Namespace = Namespaces.Ram)]
+    public HeaderTradeSettlementType TradeSettlement { get; set; } = new();
+}
+\end{lstlisting}
+
+Ohne die \texttt{Order}-Attribute würde der \texttt{XmlSerializer} die Reihenfolge nach Alphabet oder Deklarationsreihenfolge wählen, was bei ZUGFeRD zu Validierungsfehlern führt.
 
 \section{Fallback-Strategien für Minimalvalidität}
-\textit{[Wird von Sebastian Radić verfasst]}
+\label{sec:zugferd_fallback}
+
+\subsection{Pflichtfelder mit Defaultwerten absichern}
+
+Wenn das KI-Modell ein Pflichtfeld nicht findet, muss das Backend trotzdem ein gültiges XML produzieren können. Für ZUGFeRD sind besonders heikel:
+
+\begin{itemize}
+    \item \texttt{GuidelineSpecifiedDocumentContextParameter.ID} — ohne dieses Feld ist das Dokument kein gültiges ZUGFeRD
+    \item \texttt{SellerTradeParty.Name} — Rechnungssteller ist immer Pflicht
+    \item \texttt{TaxTotalAmount} — muss mit Positionen übereinstimmen (BR-S-08)
+\end{itemize}
+
+Die Defaultwerte in den C\#-Klassen (z.\,B. \texttt{Country = "AT"}, \texttt{Currency = "EUR"}) greifen automatisch wenn kein Wert befüllt wird.
+
+\subsection{PDF/A-3 (noch nicht implementiert)}
+
+ZUGFeRD ist eigentlich ein hybrides Format: PDF mit eingebettetem XML. Im aktuellen Projektstand gibt der \texttt{ZugferdService} nur XML als Text zurück. Für einen echten Produktionseinsatz wäre die vollständige PDF/A-3-Generierung sinnvoll, etwa über Razor-Templates zu HTML und dann zu PDF mit Playwright oder wkhtmltopdf.\footnote{Vgl. iText Software: \textit{iText 7 - PDF/A-3 and attachments}, \url{https://kb.itextpdf.com/home/it7kb/ebooks/itext-7-jump-start-tutorial-for-java/chapter-7-creating-pdfs-with-pdf-a}, letzter Zugriff am 06.01.2026}
+
+\subsection{Schematron-Validierung (noch nicht implementiert)}
+
+Während XSD nur prüft ob die Struktur stimmt, würde Schematron auch inhaltliche Regeln prüfen können — zum Beispiel ob die Summe aller Positionssteuerbeträge mit dem Gesamtsteuerbetrag übereinstimmt (BR-S-08). Das ist im Projekt nicht eingebaut, wäre aber für einen echten Einsatz sinnvoll.\footnote{Vgl. KoSIT: \textit{ZUGFeRD 2.3 Schematron Validation Rules}, \url{https://www.ferd-net.de/standards/zugferd-2.x/index.html}, letzter Zugriff am 06.01.2026}
+
+Die Korrektheit der Steuerberechnung wird aktuell durch den deterministischen Code in \texttt{Calculate\-Line\-Items} sichergestellt (Kapitel \ref{sec:ki_mapping}). Das LLM liefert die Rohdaten, das Backend rechnet selbst nach.

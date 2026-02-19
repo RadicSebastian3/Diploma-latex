@@ -1,17 +1,112 @@
 \setauthor{Sebastian Radić}
-\chapter{Technologie-Stack}
+\chapter{Technologie-Stack und Begründung}
 \label{chap:technologie_stack}
 
-\textit{[Dieses Kapitel wird von Sebastian Radić verfasst und beschreibt den verwendeten Technologie-Stack.]}
+Für ein Projekt dieser Art gibt es viele mögliche Technologiekombinationen.
+Dieses Kapitel erklärt, welche Tools und Frameworks konkret eingesetzt wurden
+und warum diese Wahl sinnvoll war – sowohl aus technischer Sicht als auch
+hinsichtlich des vorhandenen Vorwissens im Team.
 
-\section{Backend-Technologien}
-\textit{[Wird von Sebastian Radić verfasst: ASP.NET Core, C\#, Entity Framework]}
+\section{Backend: ASP.NET Core 8, C\#, Swagger/OpenAPI}
+\label{sec:backend_technologien}
 
-\section{Frontend-Technologien}
-\textit{[Wird von Sebastian Radić verfasst: Angular, TypeScript]}
+Das Backend wurde mit ASP.NET Core und C\# umgesetzt.
+Der Hauptgrund dafür war, dass wir ASP.NET aus dem Unterricht bereits kannten
+und wussten, wie man damit eine REST-API aufbaut.
+Außerdem ist das Framework sehr gut dokumentiert und bietet mit dem
+eingebauten Dependency-Injection-System eine saubere Möglichkeit,
+Services zu trennen und testbar zu halten.
 
-\section{Datenbank und Infrastruktur}
-\textit{[Wird von Sebastian Radić verfasst: PostgreSQL, Docker]}
+Swagger (via Swashbuckle) ist automatisch aktiv, wenn das Backend im Development-Modus läuft.
+Das macht es einfach, die API-Endpunkte direkt im Browser auszuprobieren,
+ohne extra ein Tool wie Postman zu brauchen.
+Die \texttt{.http}-Datei (\texttt{BillCoverterService.http}) im Projekt erlaubt
+das schnelle Testen direkt aus Visual Studio heraus.
 
-\section{KI und Machine Learning}
-\textit{[Wird von Sebastian Radić verfasst: Gemini API, Tesseract OCR]}
+Controllers wie \texttt{InvoiceController} und \texttt{ZugferdController} sind als
+\texttt{ApiController} mit Routing-Attributen annotiert und liefern standardmäßig
+JSON-Antworten zurück. Für Fehler wird \texttt{ProblemDetails} nach RFC 9457 genutzt.
+
+\section{Datenhaltung: PostgreSQL (Docker), EF Core}
+\label{sec:datenhaltung}
+
+Als Datenbank wurde PostgreSQL gewählt, weil es kostenlos, stabil und weit verbreitet ist.
+Im Projekt läuft PostgreSQL als Docker-Container, was bedeutet, dass kein manuelles
+Installieren nötig ist – ein \texttt{docker-compose up} reicht.
+
+Der Datenbankzugriff erfolgt über Entity Framework Core mit dem Code-First-Ansatz.
+Das bedeutet, die Datenbankstruktur wird aus den C\#-Modellen abgeleitet.
+Sobald sich ein Modell ändert, erstellt man eine neue Migration mit
+\texttt{dotnet ef migrations add} und wendet sie mit \texttt{dotnet ef database update} an.
+
+Die Migrationshistorie liegt im Ordner \texttt{Migrations/} und ist versioniert,
+sodass jede Änderung am Schema nachvollziehbar bleibt.
+Der \texttt{ApplicationDbContext} definiert die Tabellen und wird per Dependency Injection
+in die Repositories injiziert.
+
+\section{Frontend: Angular (smart-bill-ui)}
+\label{sec:frontend_technologien}
+
+Das Frontend ist eine Angular-SPA (\textit{Single Page Application}) im Ordner
+\texttt{smart-bill-ui/}. Es kommuniziert ausschließlich über HTTP mit der Backend-API
+und hat keine eigene Logik zur Rechnungsverarbeitung.
+
+Angular wurde gewählt, weil der Frontend-Entwickler Luis Schörgendorfer
+damit gearbeitet hat und das Framework sich gut für formularbasierte
+Webanwendungen eignet. TypeScript sorgt für Typsicherheit, was Fehler
+durch falsch formatierte API-Anfragen reduziert.
+
+Das Frontend wird ebenfalls als Docker-Container gebaut und über einen
+Nginx-Webserver ausgeliefert. Die \texttt{nginx.conf} ist so konfiguriert,
+dass alle Routen ans Angular-Routing weitergeleitet werden.
+
+\section{Bibliotheken: PdfPig, Tesseract, XmlSerializer, XSD-Validierung}
+\label{sec:bibliotheken}
+
+Neben dem Framework selbst kommen mehrere spezialisierte Bibliotheken zum Einsatz:
+
+\begin{itemize}
+    \item \textbf{PdfPig} – open-source Bibliothek zum Lesen von PDF-Dateien in C\#.
+    Sie extrahiert den Textinhalt direkt aus dem PDF-Strukturbaum, ohne einen externen
+    Prozess starten zu müssen. Das war der Hauptvorteil gegenüber iTextSharp,
+    das lizenzrechtliche Einschränkungen hat.
+
+    \item \textbf{Tesseract OCR} – Engine zur Texterkennung in Bildern, basiert auf einem
+    LSTM-Netzwerk. Wird über den NuGet-Wrapper \texttt{Tesseract} angebunden.
+    Sprachmodelle (Deutsch, Englisch) müssen separat heruntergeladen und im
+    \texttt{tessdata/}-Ordner abgelegt werden. Dafür gibt es die
+    PowerShell-Skripte \texttt{download-tessdata.ps1} und \texttt{download-tesseract-models.ps1}.
+
+    \item \textbf{XmlSerializer} – Teil von \texttt{System.Xml.Serialization} aus .NET.
+    Wird verwendet, um die C\#-Modelle direkt in XML zu serialisieren.
+    Über Attribute wie \texttt{[XmlElement]}, \texttt{[XmlAttribute]} und
+    \texttt{[XmlNamespaceDeclarations]} lässt sich die Ausgabe exakt steuern.
+
+    \item \textbf{XSD-Validierung} – Die offiziellen Schemadateien für ebInterface 6.1
+    und ZUGFeRD 2.3 CII liegen im Ordner \texttt{Doc/}.
+    Das generierte XML wird mit \texttt{XmlSchemaSet} und \texttt{XmlReaderSettings}
+    gegen das jeweilige Schema geprüft, bevor es zurückgegeben wird.
+\end{itemize}
+
+\section{Entwicklungsumgebung: Docker, Skripte, Logging, Konfiguration}
+\label{sec:entwicklungsumgebung}
+
+Das gesamte System lässt sich mit einer einzigen \texttt{docker-compose.yml} starten,
+die im Root-Ordner \texttt{SmartBillConverter/} liegt.
+Sie definiert drei Services: das Backend, das Frontend und PostgreSQL.
+Für die lokale Entwicklung ist ein separates \texttt{appsettings.Development.json}
+vorhanden, das die Datenbankverbindung und API-Keys überschreibt.
+
+Sensible Werte wie der Gemini-API-Key werden über Umgebungsvariablen übergeben
+und nicht in der Versionskontrolle gespeichert.
+Im \texttt{appsettings.json} sind nur Platzhalter-Werte hinterlegt.
+
+Für das Einrichten von Tesseract auf einem frischen System gibt es mehrere
+PowerShell-Skripte im Backend-Ordner, die das Herunterladen der Modelle
+und das Kopieren in den richtigen Pfad automatisieren.
+
+Das Logging nutzt die standardmäßige ASP.NET-Core-Logging-Infrastruktur mit
+\texttt{ILogger<T>}.
+Jeder Service, der kritische Schritte ausführt (z.\,B. LLM-Aufruf, XML-Validierung),
+schreibt bei Fehlern eine geloggerte Warnung oder einen Error-Eintrag.
+So lassen sich Probleme im Betrieb leichter nachvollziehen.

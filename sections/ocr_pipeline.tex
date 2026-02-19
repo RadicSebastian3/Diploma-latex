@@ -1,14 +1,232 @@
-\setauthor{Sebastian Radić}
+\setauthor{Sebastian Radic}
 \chapter{OCR-Pipeline für Bilder}
 \label{chap:ocr_pipeline}
 
-\textit{[Dieses Kapitel wird von Sebastian Radić verfasst und beschreibt die OCR-Pipeline.]}
+Wenn eine Rechnung als Scan oder Foto vorliegt, gibt es keinen digitalen Text den man einfach auslesen könnte. Hier muss OCR (Optical Character Recognition) den Text aus dem Bild erkennen. Im Projekt wird dafür \textit{Tesseract} verwendet, die bekannteste Open-Source-OCR-Engine.
 
 \section{Einrichtung von Tesseract}
-\textit{[Wird von Sebastian Radić verfasst: Skripte, Modelle]}
+\label{sec:tesseract_einrichtung}
+
+\subsection{OcrExtractionService: Setup und Abhängigkeiten}
+
+Tesseract braucht sogenannte \textit{Traineddata}-Dateien — das sind die Sprachmodelle mit denen das Programm Buchstaben erkennt. Sie sind nicht im NuGet-Package enthalten und müssen separat heruntergeladen werden:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={OcrExtractionService Constructor}, label={lst:ocr_constructor}]
+public class OcrExtractionService : IOcrExtractionService
+{
+    private readonly string _tessDataPath;
+    private static readonly string[] SupportedFormats = 
+        { ".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".gif" };
+
+    public OcrExtractionService(ILogger<OcrExtractionService> logger, 
+                                 IConfiguration configuration)
+    {
+        _logger = logger;
+        _tessDataPath = configuration.GetValue<string>("Tesseract:DataPath") 
+            ?? Path.Combine(Directory.GetCurrentDirectory(), "tessdata");
+        
+        if (!Directory.Exists(_tessDataPath))
+            _logger.LogWarning("Tesseract data path nicht gefunden: {Path}", 
+                _tessDataPath);
+    }
+}
+\end{lstlisting}
+
+\texttt{tessDataPath} zeigt auf den Ordner mit den Sprachdateien (z.\,B. \texttt{deu.traineddata}). Das Projekt enthält ein PowerShell-Script das sie automatisch herunterlädt:
+
+\begin{lstlisting}[language=bash, caption={download-tessdata.ps1 (Auszug)}, label={lst:tessdata_download}]
+$tessDataPath = ".\tessdata"
+$baseUrl = "https://github.com/tesseract-ocr/tessdata/raw/main"
+
+if (-not (Test-Path $tessDataPath)) { New-Item -ItemType Directory -Path $tessDataPath }
+
+Invoke-WebRequest -Uri "$baseUrl/deu.traineddata" -OutFile "$tessDataPath\deu.traineddata"
+Invoke-WebRequest -Uri "$baseUrl/eng.traineddata" -OutFile "$tessDataPath\eng.traineddata"
+Write-Host "Tessdata download completed."
+\end{lstlisting}
+
+Die Dateien sind nicht klein: \texttt{deu.traineddata} ist ca.\ 16\,MB, \texttt{eng.traineddata} ca.\ 11\,MB. In einem Docker-Container werden sie beim Build-Schritt heruntergeladen.\footnote{Vgl. Tesseract OCR: \textit{Data Files}, \url{https://github.com/tesseract-ocr/tessdata}, letzter Zugriff am 06.01.2026}
+
+\subsection{Tesseract Engine-Initialisierung}
+
+Beim Start einer OCR-Verarbeitung wird eine \texttt{TesseractEngine}-Instanz erstellt:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Tesseract Engine Setup}, label={lst:tesseract_init}]
+var tempImagePath = Path.GetTempFileName() + Path.GetExtension(fileName);
+using (var fs = new FileStream(tempImagePath, FileMode.Create))
+    await imageStream.CopyToAsync(fs);
+
+try
+{
+    using var engine = new TesseractEngine(_tessDataPath, "deu+eng", 
+                                            EngineMode.Default);
+    engine.SetVariable("tessedit_char_whitelist", 
+        "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz" +
+        "aeoeuaeoeueAeOeUess.,:-+/()euro$GBP \n\r\t");
+    engine.SetVariable("preserve_interword_spaces", "1");
+    // Verarbeitung folgt...
+}
+finally { if (File.Exists(tempImagePath)) File.Delete(tempImagePath); }
+\end{lstlisting}
+
+Tesseract.NET braucht einen echten Dateipfad, daher muss der Stream zuerst in eine temporäre Datei geschrieben werden. Der \texttt{finally}-Block sorgt dafür, dass die Temp-Datei auch bei Fehlern gelöscht wird.
+
+Was die Parameter bedeuten:
+\begin{itemize}
+    \item \texttt{deu+eng}: Beide Sprachdateien gleichzeitig aktiv — das hilft bei Rechnungen mit gemischtem Deutsch/Englisch.
+    \item \texttt{EngineMode.Default}: Nutzt das neuere LSTM-Netz aus Tesseract 4.0, das deutlich besser ist als die alte Methode.
+    \item \texttt{tessedit\_char\_whitelist}: Schränkt die erlaubten Zeichen ein, damit Bildartefakte nicht als Sonderzeichen erkannt werden.
+    \item \texttt{preserve\_interword\_spaces}: Mehrfache Leerzeichen bleiben erhalten, was für Tabellenspalten wichtig ist.
+\end{itemize}
 
 \section{OCR-Endpunkte und Integration}
-\textit{[Wird von Sebastian Radić verfasst]}
+\label{sec:ocr_endpunkte}
+
+\subsection{Anbindung an den ImageProcessingController}
+
+Der \texttt{ImageProcessingController} nimmt Bilddateien entgegen und leitet sie an den \texttt{OcrExtractionService} weiter:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={OCR-Endpoint im Controller}, label={lst:ocr_endpoint}]
+[HttpPost("ocr")]
+[Consumes("multipart/form-data")]
+public async Task<IActionResult> ProcessImage(IFormFile imageFile)
+{
+    if (imageFile == null || imageFile.Length == 0)
+        return BadRequest("Keine Datei");
+
+    if (!_ocrService.IsImageFormatSupported(imageFile.FileName))
+        return BadRequest($"Format nicht unterstuetzt: " +
+            Path.GetExtension(imageFile.FileName));
+
+    try
+    {
+        var extractedText = await _ocrService.ExtractTextFromImageAsync(imageFile);
+        var llmResponse  = await _llmService.ConvertToXmlAsync(extractedText);
+
+        return Ok(new {
+            success      = true,
+            extractedText,
+            ebInterfaceXml = llmResponse.EbInterfaceXml,
+            zugferdXml     = llmResponse.ZugferdXml,
+            validationOk   = llmResponse.IsValidXml
+        });
+    }
+    catch (InvalidOperationException ex)
+    {
+        _logger.LogError(ex, "OCR fehlgeschlagen fuer {File}", imageFile.FileName);
+        return StatusCode(500, new { error = ex.Message });
+    }
+}
+\end{lstlisting}
+
+\subsection{Formatprüfung und Validierung}
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Bildformat-Pruefung}, label={lst:image_validation}]
+public bool IsImageFormatSupported(string fileName)
+{
+    var extension = Path.GetExtension(fileName).ToLowerInvariant();
+    return SupportedFormats.Contains(extension);
+}
+\end{lstlisting}
+
+Die Prüfung läuft über die Dateiendung. Eine sicherere Variante würde die ersten Bytes der Datei lesen (Magic Bytes), aber für den Projekteinsatz ist die Endungsprüfung ausreichend.
+
+\subsection{Ablauf von Bild zu XML}
+
+Der vollständige Ablauf für eine gescannte Rechnung sieht so aus:
+\begin{enumerate}
+    \item Frontend lädt Bilddatei via \texttt{POST /api/ImageProcessing/ocr} hoch
+    \item Controller prüft Dateiendung und Dateigröße
+    \item \texttt{OcrExtractionService} speichert das Bild temporär und führt Tesseract aus
+    \item Extrahierter Text wird an \texttt{LlmConversionService} weitergegeben
+    \item KI-Modell erzeugt JSON, das zu ebInterface und ZUGFeRD XML gemappt wird
+    \item Antwort mit Text und fertigen XMLs geht zurück ans Frontend
+\end{enumerate}
+
+Der zweistufige Ablauf OCR → KI hat einen praktischen Vorteil: Tesseract macht manchmal kleine Fehler (z.\,B. \glqq O\grqq{} statt \glqq 0\grqq{}). Das Sprachmodell kennt den Kontext und kann solche Tippfehler oft selbst korrigieren.
 
 \section{Qualität, Sprachpakete und Nachbearbeitung}
-\textit{[Wird von Sebastian Radić verfasst]}
+\label{sec:ocr_qualitaet}
+
+\subsection{Confidence-Scoring}
+
+Tesseract gibt nach der Erkennung einen Konfidenzwert zurück, der zeigt wie sicher es bei der Erkennung war:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={OCR-Verarbeitung mit Confidence}, label={lst:ocr_processing}]
+using var img  = Pix.LoadFromFile(tempImagePath);
+using var page = engine.Process(img);
+
+extractedText = page.GetText();
+var confidence = page.GetMeanConfidence();
+
+_logger.LogInformation("OCR fertig. Konfidenz: {Conf:F2}%, Zeichen: {Len}", 
+    confidence * 100, extractedText?.Length ?? 0);
+
+if (confidence < 0.5)
+    _logger.LogWarning("Niedrige Konfidenz -- Bildqualitaet pruefen");
+\end{lstlisting}
+
+Werte unter 0,5 bedeuten meistens dass das Bild zu unscharf, zu dunkel oder stark verzerrt war. Im aktuellen Stand wird das nur geloggt. In einer erweiterten Version könnte der Benutzer direkt eine Warnung bekommen.\footnote{Vgl. Tesseract Documentation: \textit{Improving Quality}, \url{https://tesseract-ocr.github.io/tessdoc/ImproveQuality.html}, letzter Zugriff am 06.01.2026}
+
+\subsection{Preprocessing-Optionen}
+
+Die Erkennungsqualität hängt stark von der Bildvorbereitung ab. Folgende Schritte sind dokumentiert und könnten in einer späteren Version eingebaut werden:
+
+\subsubsection{Deskewing}
+
+Tesseract hat eingebaute Schräglagekorrektur, kommt aber bei starker Neigung (über 5°) an seine Grenzen. Manuell geht das so:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Deskewing (nicht implementiert)}, label={lst:deskewing}]
+using var img = Pix.LoadFromFile(imagePath);
+var angle = img.FindSkew();
+if (Math.Abs(angle) > 0.1)
+{
+    using var deskewed = img.Rotate(angle);
+    using var page = engine.Process(deskewed);
+    extractedText = page.GetText();
+}
+\end{lstlisting}
+
+\subsubsection{Adaptive Binarisierung}
+
+Bei ungleichmäßiger Beleuchtung (Schatten, Farbstich) hilft Otsu-Binarisierung:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Adaptive Binarisierung (nicht implementiert)}, label={lst:binarization}]
+using var binary = img.BinarizeOtsuAdaptiveThreshold(
+    tileWidth: 300, tileHeight: 300, smoothing: 1, scoreFraction: 0.1f);
+using var page = engine.Process(binary);
+\end{lstlisting}
+
+Otsu's Method berechnet pro Bildkachel einen eigenen Schwellwert statt einen globalen für das ganze Bild.
+
+\subsection{Häufige Fehler und deren Ursachen}
+
+\begin{itemize}
+    \item \textbf{TessdataNotFoundException}: Die Sprachmodell-Dateien fehlen. Ursache: \texttt{download-tessdata.ps1} wurde nicht ausgeführt oder der Pfad in \texttt{appsettings.json} stimmt nicht.
+    \item \textbf{UnsupportedImageFormatException}: Leptonica (die interne Bildverarbeitungsbibliothek) kann die Datei nicht lesen. Kommt bei beschädigten Bilddateien vor.
+    \item \textbf{OutOfMemoryException}: Bei sehr hochauflösenden Bildern (über 20 Megapixel). Lösung: Bild vor der OCR auf 300 DPI herunterskalieren.
+\end{itemize}
+
+\subsection{Engine-Pooling für hohe Last}
+
+Das Erstellen einer neuen \texttt{TesseractEngine} dauert 300 bis 500 ms. Bei vielen gleichzeitigen Anfragen ist das ein Problem. Ein Pool hält vorkonfigurierte Engines bereit:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={TesseractEngine-Pool (Konzept)}, label={lst:engine_pool}]
+public class TesseractEnginePool
+{
+    private readonly ObjectPool<TesseractEngine> _pool;
+
+    public TesseractEnginePool(string tessDataPath, int poolSize = 4)
+    {
+        var policy = new DefaultPooledObjectPolicy<TesseractEngine>
+        {
+            CreateFunc  = () => new TesseractEngine(tessDataPath, "deu+eng", 
+                                                    EngineMode.Default),
+            ReturnFunc  = engine => true
+        };
+        _pool = new DefaultObjectPool<TesseractEngine>(policy, poolSize);
+    }
+}
+\end{lstlisting}
+
+Der Pool hält vier Engines im Speicher. Jede Anfrage leiht sich eine aus, gibt sie nach der Verarbeitung zurück und die nächste Anfrage kann sie sofort nutzen.\footnote{Vgl. Microsoft: \textit{Object Pooling in .NET}, \url{https://learn.microsoft.com/en-us/aspnet/core/performance/objectpool}, letzter Zugriff am 06.01.2026}

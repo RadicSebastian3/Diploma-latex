@@ -2,13 +2,109 @@
 \chapter{Gesamtarchitektur}
 \label{chap:gesamtarchitektur}
 
-\textit{[Dieses Kapitel wird von Sebastian Radić verfasst und beschreibt die Gesamtarchitektur des Systems.]}
+Das Kapitel beschreibt, wie die einzelnen Teile von SmartBillConverter zusammenspielen.
+Statt nur eine Auflistung von Komponenten zu liefern, geht es hier darum zu verstehen,
+warum das System so aufgebaut wurde und welchen Weg eine Rechnung durch das System nimmt,
+bevor am Ende ein fertiges XML rauskommt.
 
 \section{Kontextdiagramm und Use Cases}
-\textit{[Wird von Sebastian Radić verfasst]}
+\label{sec:kontextdiagramm}
+
+SmartBillConverter ist eine Webanwendung, bei der der Benutzer über ein Angular-Frontend eine
+Rechnung hochlädt. Das kann entweder ein PDF oder ein Bild sein.
+Das Backend übernimmt dann den Rest komplett alleine: Text extrahieren, mit KI normalisieren,
+in ein Rechnungsformat übersetzen und als XML ausliefern.
+
+Die wichtigsten Akteure im System sind:
+
+\begin{itemize}
+    \item \textbf{Benutzer} – lädt eine Rechnung hoch und bekommt am Ende das fertige XML zurück
+    \item \textbf{Backend-API} – nimmt die Datei entgegen und koordiniert alle Verarbeitungsschritte
+    \item \textbf{Gemini API (Google)} – externe KI, die den rohen Rechnungstext in strukturierte Daten umwandelt
+    \item \textbf{PostgreSQL-Datenbank} – speichert verarbeitete Rechnungen persistent
+\end{itemize}
+
+Die wichtigsten Use Cases, die das System abdeckt, sind:
+
+\begin{enumerate}
+    \item PDF-Rechnung hochladen und als ebInterface 6.1 XML herunterladen
+    \item Bild einer Rechnung per OCR verarbeiten und als ZUGFeRD 2.3 XML bekommen
+    \item Bereits verarbeitete Rechnungen in der Datenbank ansehen und erneut herunterladen
+\end{enumerate}
+
+Der gesamte Verarbeitungsprozess läuft serverseitig, also muss der Browser nichts selbst rechnen.
+Das macht das Frontend zur reinen Anzeige- und Uploadschicht.
 
 \section{Komponentenübersicht}
-\textit{[Wird von Sebastian Radić verfasst: Backend-API, Services, Datenbank, Frontend]}
+\label{sec:komponentenübersicht}
+
+Das Backend besteht aus mehreren klar voneinander getrennten Schichten.
+Jede Schicht hat genau eine Aufgabe, was das Testen und Warten deutlich einfacher macht.
+
+\begin{itemize}
+    \item \textbf{Controller-Schicht} – nimmt HTTP-Anfragen entgegen und leitet sie weiter.
+    Es gibt je einen Controller für Bildverarbeitung, Invoices, ZUGFeRD, Downloads und
+    allgemeines Processing.
+
+    \item \textbf{Service-Schicht} – enthält die gesamte Geschäftslogik.
+    Wichtige Services sind \texttt{PdfExtractionService}, \texttt{OcrService},
+    \texttt{LlmConversionService}, \texttt{EbInterfaceService} und \texttt{ZugferdService}.
+
+    \item \textbf{Repository-Schicht} – kapselt den Datenbankzugriff.
+    Der \texttt{InvoiceRepository} ist über eine \texttt{IInvoiceRepository}-Schnittstelle
+    angebunden, damit ein späterer Wechsel des Persistence-Backends kein Problem wäre.
+
+    \item \textbf{Datenbank} – PostgreSQL läuft als Docker-Container.
+    Entity Framework Core mit Code-First-Migrationen verwaltet das Schema automatisch.
+
+    \item \textbf{Frontend (smart-bill-ui)} – Angular-SPA.
+    Kommuniziert ausschließlich über HTTP mit der Backend-API.
+    Rendert Formulare, Tabellen und Download-Buttons, kümmert sich aber um keine Logik.
+\end{itemize}
+
+Die Komponenten sind also in einem klassischen dreischichtigen Modell aufgebaut:
+Präsentation (Angular), Logik (Services) und Datenhaltung (Repository + PostgreSQL).
 
 \section{Datenfluss}
-\textit{[Wird von Sebastian Radić verfasst: PDF/Image → Text → KI-JSON → Mapping → XML → Validierung]}
+\label{sec:datenfluss}
+
+Wenn der Benutzer eine Datei hochlädt, durchläuft sie mehrere Stufen, bis das XML
+fertig ist. Der genaue Ablauf hängt davon ab, ob eine PDF oder ein Bild übergeben wird,
+aber die mittleren Schritte sind identisch.
+
+\begin{enumerate}
+    \item \textbf{Upload} – Der Browser schickt die Datei per HTTP-POST an die Backend-API.
+    Je nach Dateityp landet die Anfrage entweder beim \texttt{ProcessingController}
+    (PDF) oder beim \texttt{ImageProcessingController} (Bild).
+
+    \item \textbf{Textextraktion} –
+    \begin{itemize}
+        \item PDF: \texttt{PdfExtractionService} nutzt PdfPig, um den Text direkt aus dem PDF zu lesen.
+        \item Bild: \texttt{OcrService} gibt das Bild an Tesseract weiter und bekommt
+        den erkannten Text zurück.
+    \end{itemize}
+
+    \item \textbf{KI-Normalisierung} – Der rohe Text wird an den \texttt{LlmConversionService}
+    übergeben. Dieser baut einen Prompt zusammen und schickt ihn an die Gemini API.
+    Die Antwort ist ein JSON-Objekt, das einer definierten \texttt{InvoiceData}-Struktur entspricht.
+
+    \item \textbf{Deserialisierung und Validierung} – Das JSON wird in ein
+    C\#-Objekt deserialisiert. Falls Pflichtfelder fehlen, greift ein Fallback-Mechanismus
+    und füllt die fehlenden Werte mit sinnvollen Standardwerten.
+
+    \item \textbf{XML-Generierung} –
+    \begin{itemize}
+        \item \texttt{EbInterfaceService} erzeugt ein ebInterface 6.1 XML über \texttt{XmlSerializer}.
+        \item \texttt{ZugferdService} erzeugt ein ZUGFeRD 2.3 CII XML analog dazu.
+    \end{itemize}
+
+    \item \textbf{XSD-Validierung} – Das fertige XML wird gegen das offizielle Schema geprüft.
+    Fehler werden geloggt, und der Service versucht bekannte Probleme automatisch zu korrigieren.
+
+    \item \textbf{Speicherung und Rückgabe} – Die verarbeitete Rechnung wird in der Datenbank
+    gespeichert. Das XML wird als HTTP-Response an den Browser zurückgeschickt und steht
+    zum Download bereit.
+\end{enumerate}
+
+Der gesamte Weg einer Rechnung durch das System lässt sich also zusammenfassen als:
+\textit{Datei → Text → KI-JSON → C\#-Objekt → XML → Validierung → Datenbank → Download.}

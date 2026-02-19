@@ -1,20 +1,489 @@
-\setauthor{Sebastian Radić}
+\setauthor{Sebastian Radic}
 \chapter{Backend-Anwendungsstruktur}
 \label{chap:backend_struktur}
 
-\textit{[Dieses Kapitel wird von Sebastian Radić verfasst und beschreibt die Backend-Struktur.]}
+Das Backend des \textit{SmartBillConverter} ist eine RESTful Web API auf Basis von ASP.NET Core 9.0. Der Aufbau folgt einem klassischen Schichtenmodell: Controller nehmen HTTP-Anfragen entgegen, Services enthalten die eigentliche Logik, und Repositories kümmern sich um den Datenbankzugriff. Dieses Kapitel zeigt, wie die einzelnen Teile technisch umgesetzt wurden.
 
 \section{Controller}
-\textit{[Wird von Sebastian Radić verfasst: Invoice, Processing, ZUGFeRD, Image Processing, Download]}
+\label{sec:controller_implementation}
+
+Die Controller sind das Erste, was eine eingehende HTTP-Anfrage sieht. Sie prüfen die Anfrage, leiten die eigentliche Arbeit an die zuständigen Services weiter und schicken das Ergebnis zurück ans Frontend. Im Projekt gibt es fünf Controller, jeder für einen eigenen Aufgabenbereich.
+
+\subsection{ProcessingController: Upload und Verarbeitungs-Orchestrierung}
+\label{subsec:processing_controller}
+
+Der \texttt{ProcessingController} ist der wichtigste Controller im Projekt. Er steuert den gesamten Ablauf von der hochgeladenen PDF-Datei bis zur fertigen XML.
+
+\subsubsection{Struktur und Dependency Injection}
+Der Controller nutzt Constructor Injection für alle Abhängigkeiten:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={ProcessingController Constructor}, label={lst:processing_constructor}]
+[ApiController]
+[Route("api/[controller]")]
+public class ProcessingController : ControllerBase
+{
+    private readonly IInvoiceService _invoiceService;
+    private readonly ILlmConversionService _llmConversionService;
+    private readonly ILogger<ProcessingController> _logger;
+
+    public ProcessingController(
+        IInvoiceService invoiceService, 
+        ILlmConversionService llmConversionService,
+        ILogger<ProcessingController> logger)
+    {
+        _invoiceService = invoiceService;
+        _llmConversionService = llmConversionService;
+        _logger = logger;
+    }
+}
+\end{lstlisting}
+
+Die \texttt{[ApiController]}-Attribute aktiviert automatische Model-Validierung, Fehlerbehandlung und API-spezifische Routing-Konventionen. \texttt{ILogger} wird vom ASP.NET Core Framework bereitgestellt und ermöglicht strukturiertes Logging.\footnote{Vgl. Microsoft: \textit{Dependency injection in ASP.NET Core}, \url{https://learn.microsoft.com/en-us/aspnet/core/fundamentals/dependency-injection}, letzter Zugriff am 06.01.2026}
+
+\subsubsection{Upload-Endpoint mit Validierung}
+Der Haupt-Endpoint \texttt{/api/Processing/upload} akzeptiert PDF-Dateien via Multipart-Form-Data:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Upload-Endpoint mit Validierung}, label={lst:upload_endpoint}]
+[HttpPost("upload")]
+[Consumes("multipart/form-data")]
+[ProducesResponseType(StatusCodes.Status200OK)]
+[ProducesResponseType(StatusCodes.Status400BadRequest)]
+public async Task<IActionResult> UploadPdf(IFormFile file)
+{
+    if (file == null || file.Length == 0)
+        return BadRequest(new { error = "Keine Datei hochgeladen" });
+
+    if (!file.ContentType.Equals("application/pdf", 
+        StringComparison.OrdinalIgnoreCase))
+        return BadRequest(new { error = "Nur PDF-Dateien erlaubt" });
+
+    if (file.Length > 10 * 1024 * 1024) // 10MB Limit
+        return BadRequest(new { error = "Datei zu gross (max. 10MB)" });
+
+    using var stream = file.OpenReadStream();
+    var invoice = await _invoiceService.ProcessInvoiceAsync(
+        stream, file.FileName);
+    
+    return Ok(new { success = true, invoice });
+}
+\end{lstlisting}
+
+Die Prüfung läuft in drei Schritten: Erst wird geschaut ob eine Datei vorhanden ist, dann ob es wirklich ein PDF ist, und zuletzt ob die Datei nicht größer als 10\,MB ist. Das Limit ist wichtig damit der Server bei sehr großen Dateien nicht zu viel Speicher braucht. \texttt{IFormFile} ist die ASP.NET-Klasse für hochgeladene Dateien.
+
+Die eigentliche Arbeit macht \texttt{ProcessInvoiceAsync} im \texttt{IInvoiceService}: PDF-Text extrahieren, KI aufrufen, Daten speichern. Der Controller selbst macht nur das Nötigste — die HTTP-Anfrage prüfen und das Ergebnis zurückschicken.
+
+\subsection{InvoiceController: CRUD-Operationen}
+\label{subsec:invoice_controller}
+
+Der \texttt{InvoiceController} bietet RESTful CRUD-Endpoints für gespeicherte Rechnungen:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={InvoiceController GET-Endpoints}, label={lst:invoice_get}]
+[ApiController]
+[Route("api/[controller]")]
+public class InvoiceController : ControllerBase
+{
+    private readonly IInvoiceRepository _repository;
+
+    [HttpGet]
+    public async Task<IActionResult> GetAll()
+    {
+        var invoices = await _repository.GetAllAsync();
+        return Ok(invoices);
+    }
+
+    [HttpGet("{id}")]
+    public async Task<IActionResult> GetById(int id)
+    {
+        var invoice = await _repository.GetByIdAsync(id);
+        if (invoice == null)
+            return NotFound(new { error = $"Rechnung {id} nicht gefunden" });
+        return Ok(invoice);
+    }
+
+    [HttpGet("search")]
+    public async Task<IActionResult> Search(
+        [FromQuery] string? invoiceNumber,
+        [FromQuery] int? year)
+    {
+        var results = await _repository.SearchAsync(invoiceNumber, year);
+        return Ok(results);
+    }
+}
+\end{lstlisting}
+
+Das \texttt{[FromQuery]}-Attribut liest URL-Parameter automatisch aus. Beispiel: \texttt{GET /api/Invoice/search?year=2024} wird zu \texttt{Search(null, 2024)}. Das Repository-Pattern verbirgt die Datenbankzugriffe hinter einer Schnittstelle, was das Testen mit Mock-Objekten einfach macht.\footnote{Vgl. Fowler, Martin: \textit{Patterns of Enterprise Application Architecture -- Repository}, \url{https://martinfowler.com/eaaCatalog/repository.html}, letzter Zugriff am 06.01.2026}
+
+\subsection{ZugferdController: Hybrides PDF/XML-Format}
+\label{subsec:zugferd_controller}
+
+Der \texttt{ZugferdController} verarbeitet PDFs speziell für das ZUGFeRD-Format:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={ZUGFeRD Upload-Endpoint}, label={lst:zugferd_upload}]
+[ApiController]
+[Route("api/[controller]")]
+public class ZugferdController : ControllerBase
+{
+    private readonly IZugferdService _zugferdService;
+
+    [HttpPost("upload-pdf")]
+    [Consumes("multipart/form-data")]
+    public async Task<IActionResult> UploadPdfForZugferd(IFormFile file)
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest("Keine Datei");
+
+        using var stream = file.OpenReadStream();
+        var zugferdXml = await _zugferdService.ConvertToZugferdAsync(
+            stream, file.FileName);
+
+        return Ok(new { 
+            success = true, 
+            zugferdXml,
+            format = "ZUGFeRD 2.3 EN16931"
+        });
+    }
+}
+\end{lstlisting}
+
+Der \texttt{ZugferdService} liest den Text aus dem PDF, schickt ihn an die KI und bekommt ZUGFeRD-konformes CII-XML zurück. Das XML wird direkt als String in der Antwort mitgeschickt, damit das Frontend es als Download anbieten kann.
+
+\subsection{ImageProcessingController: OCR für Scans}
+\label{subsec:image_controller}
+
+Für gescannte Rechnungen (PNG, JPEG, TIFF) bietet der \texttt{ImageProcessingController} OCR-Verarbeitung:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Image-OCR-Endpoint}, label={lst:image_ocr}]
+[HttpPost("ocr")]
+[Consumes("multipart/form-data")]
+public async Task<IActionResult> ProcessImage(IFormFile imageFile)
+{
+    var supportedFormats = new[] { ".png", ".jpg", ".jpeg", ".bmp", ".tiff" };
+    var extension = Path.GetExtension(imageFile.FileName).ToLower();
+    
+    if (!supportedFormats.Contains(extension))
+        return BadRequest($"Format {extension} nicht unterstuetzt");
+
+    var extractedText = await _ocrService.ExtractTextFromImageAsync(imageFile);
+    var llmResponse = await _llmService.ConvertToXmlAsync(extractedText);
+
+    return Ok(new { 
+        extractedText, 
+        ebInterfaceXml = llmResponse.EbInterfaceXml 
+    });
+}
+\end{lstlisting}
+
+Die Prüfung läuft über die Dateiendung. Tesseract kann alle gängigen Bildformate verarbeiten, aber die Erkennungsqualität hängt stark von der Auflösung ab (optimal sind 300 DPI). Der zweistufige Ablauf OCR → KI hilft dabei, OCR-Fehler im zweiten Schritt noch zu korrigieren.
+
+\subsection{DownloadController: XML-Datei-Export}
+\label{subsec:download_controller}
+
+Der \texttt{DownloadController} liefert generierte XML-Dateien mit korrekten HTTP-Headers:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={XML-Download mit Content-Disposition}, label={lst:xml_download}]
+[HttpGet("xml/{id}")]
+public async Task<IActionResult> DownloadXml(int id)
+{
+    var invoice = await _repository.GetByIdAsync(id);
+    if (invoice?.EbInterfaceXml == null)
+        return NotFound();
+
+    var xmlBytes = Encoding.UTF8.GetBytes(invoice.EbInterfaceXml);
+    var fileName = $"invoice_{invoice.InvoiceNumber}_ebInterface.xml";
+
+    return File(xmlBytes, "application/xml", fileName);
+}
+\end{lstlisting}
+
+Die \texttt{File()}-Methode setzt automatisch den \texttt{Content-Disposition: attachment}-Header, wodurch der Browser den Download-Dialog anzeigt. Der Dateiname folgt einem sprechenden Schema für einfache Archivierung.
 
 \section{Services}
-\textit{[Wird von Sebastian Radić verfasst: Extraktion, OCR, LLM-Konvertierung, Serialisierung, Validierung]}
+\label{sec:service_layer}
+
+Services enthalten die eigentliche Programmlogik. Jeder Service wird als Scoped registriert, das heißt pro HTTP-Request entsteht eine eigene Instanz und wird danach wieder aufgeräumt.
+
+\subsection{Interface-basierte Abstraktion}
+Alle Services sind über Interfaces definiert, was Dependency Inversion ermöglicht:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Service-Interfaces}, label={lst:service_interfaces}]
+public interface IInvoiceService
+{
+    Task<Invoice> ProcessInvoiceAsync(Stream pdfStream, string fileName);
+    Task<Invoice> SaveInvoiceAsync(Invoice invoice);
+}
+
+public interface IPdfExtractionService
+{
+    Task<string> ExtractTextFromPdfAsync(Stream pdfStream);
+}
+
+public interface IOcrExtractionService
+{
+    Task<string> ExtractTextFromImageAsync(IFormFile imageFile);
+    Task<string> ExtractTextFromImageAsync(Stream stream, string fileName);
+}
+
+public interface ILlmConversionService
+{
+    Task<LlmResponse> ConvertToXmlAsync(string extractedText);
+}
+\end{lstlisting}
+
+Weil alle Services über Interfaces angesprochen werden, kann man die konkrete Implementierung jederzeit austauschen — zum Beispiel von Gemini auf GPT-4 wechseln — ohne den Controller ändern zu müssen. Das ist auch für Tests nützlich, weil man Interfaces durch einfache Mock-Objekte ersetzen kann.
+
+\subsection{Service-Registrierung in Program.cs}
+Die Services werden im Dependency Injection Container registriert:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Service-Registrierung}, label={lst:service_registration}]
+var builder = WebApplication.CreateBuilder(args);
+
+builder.Services.AddScoped<IInvoiceRepository, InvoiceRepository>();
+builder.Services.AddScoped<IPdfExtractionService, PdfExtractionService>();
+builder.Services.AddScoped<IOcrExtractionService, OcrExtractionService>();
+builder.Services.AddScoped<ILlmConversionService, LlmConversionService>();
+builder.Services.AddScoped<IInvoiceService, InvoiceService>();
+
+builder.Services.AddHttpClient<ILlmConversionService, LlmConversionService>()
+    .SetHandlerLifetime(TimeSpan.FromMinutes(5));
+\end{lstlisting}
+
+\texttt{AddScoped} heißt: Pro HTTP-Request wird eine neue Instanz erstellt und am Ende wieder gelöscht. \texttt{AddHttpClient} meldet den \texttt{HttpClient} für den \texttt{LlmConversionService} an, was automatisch Connection-Pooling und Timeout-Verwaltung mitbringt.\footnote{Vgl. Microsoft: \textit{Make HTTP requests using IHttpClientFactory}, \url{https://learn.microsoft.com/en-us/dotnet/core/extensions/httpclient-factory}, letzter Zugriff am 06.01.2026}
+
+\subsection{InvoiceService: Orchestrierung der Pipeline}
+Der \texttt{InvoiceService} koordiniert alle Verarbeitungsschritte:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={InvoiceService Pipeline}, label={lst:invoice_service}]
+public class InvoiceService : IInvoiceService
+{
+    public async Task<Invoice> ProcessInvoiceAsync(
+        Stream pdfStream, string fileName)
+    {
+        var extractedText = await _pdfService.ExtractTextFromPdfAsync(pdfStream);
+        _logger.LogInformation("Text extrahiert: {Length} Zeichen", 
+            extractedText.Length);
+
+        var llmResponse = await _llmService.ConvertToXmlAsync(extractedText);
+
+        var invoice = MapToInvoice(llmResponse.ParsedData);
+        invoice.ExtractedText = extractedText;
+        invoice.EbInterfaceXml = llmResponse.FinalEbInterfaceXml;
+        
+        await _repository.AddAsync(invoice);
+        await _repository.SaveChangesAsync();
+        return invoice;
+    }
+}
+\end{lstlisting}
+
+Der Ablauf ist gradlinig: PDF rein, Text extrahieren, KI aufrufen, in der Datenbank speichern. Nach jedem Schritt wird geloggt, damit man beim Debuggen nachvollziehen kann, wo etwas schiefgelaufen ist.
 
 \section{Datenzugriff}
-\textit{[Wird von Sebastian Radić verfasst: DbContext, Migrations, Repository Pattern]}
+\label{sec:repository_pattern}
+
+Das Repository-Pattern abstrahiert die Datenbankzugriffe und bietet eine Collection-ähnliche Schnittstelle.
+
+\subsection{IInvoiceRepository Interface}
+
+\begin{lstlisting}[language={[Sharp]C}, caption={IInvoiceRepository Definition}, label={lst:repository_interface}]
+public interface IInvoiceRepository
+{
+    Task<Invoice?> GetByIdAsync(int id);
+    Task<List<Invoice>> GetAllAsync();
+    Task<List<Invoice>> SearchAsync(string? invoiceNumber, int? year);
+    Task AddAsync(Invoice invoice);
+    Task UpdateAsync(Invoice invoice);
+    Task DeleteAsync(int id);
+    Task<int> SaveChangesAsync();
+}
+\end{lstlisting}
+
+\subsection{Repository-Implementierung mit Entity Framework}
+
+\begin{lstlisting}[language={[Sharp]C}, caption={InvoiceRepository Implementierung}, label={lst:repository_impl}]
+public class InvoiceRepository : IInvoiceRepository
+{
+    private readonly ApplicationDbContext _context;
+
+    public async Task<List<Invoice>> SearchAsync(
+        string? invoiceNumber, int? year)
+    {
+        var query = _context.Invoices.AsQueryable();
+
+        if (!string.IsNullOrEmpty(invoiceNumber))
+            query = query.Where(i => i.InvoiceNumber.Contains(invoiceNumber));
+
+        if (year.HasValue)
+            query = query.Where(i => i.Year == year.Value);
+
+        return await query.ToListAsync();
+    }
+}
+\end{lstlisting}
+
+\texttt{AsQueryable()} baut die SQL-Abfrage erst dann auf, wenn tatsächlich auf die Datenbank zugegriffen wird. \texttt{Contains()} wird zu SQL \texttt{LIKE} übersetzt, sodass Teilbegriffe gefunden werden.
+
+\subsection{ApplicationDbContext: Entity Framework Configuration}
+
+\begin{lstlisting}[language={[Sharp]C}, caption={ApplicationDbContext}, label={lst:dbcontext}]
+public class ApplicationDbContext : DbContext
+{
+    public DbSet<Invoice> Invoices { get; set; }
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        modelBuilder.Entity<Invoice>(entity =>
+        {
+            entity.HasKey(e => e.Id);
+            entity.Property(e => e.InvoiceAmount).HasPrecision(14, 2);
+            entity.Property(e => e.DiscountAmount).HasPrecision(14, 2);
+            entity.HasIndex(e => e.InvoiceNumber);
+            entity.HasIndex(e => e.Year);
+        });
+    }
+}
+\end{lstlisting}
+
+\texttt{HasPrecision(14, 2)} legt fest, dass Geldbeträge mit 14 Stellen und 2 Nachkommastellen gespeichert werden. Die Indizes auf \texttt{InvoiceNumber} und \texttt{Year} machen spätere Suchanfragen deutlich schneller.\footnote{Vgl. Microsoft: \textit{Entity Framework Core Documentation}, \url{https://learn.microsoft.com/en-us/ef/core/}, letzter Zugriff am 06.01.2026}
+
+\subsection{Invoice Entity-Modell}
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Invoice Entity}, label={lst:invoice_entity}]
+public class Invoice
+{
+    [Key]
+    public int Id { get; set; }
+    public short Year { get; set; }
+    [MaxLength(20)]
+    public string? InvoiceNumber { get; set; }
+    [Column(TypeName = "decimal(14,2)")]
+    public decimal InvoiceAmount { get; set; }
+    public DateTime InvoiceDate { get; set; }
+    public DateTime DueDate { get; set; }
+    [MaxLength(20)]
+    public string? VatNumber { get; set; }
+    [MaxLength(34)]
+    public string? IBAN { get; set; }
+    [NotMapped]
+    public string? ExtractedText { get; set; }
+    [NotMapped]
+    public string? EbInterfaceXml { get; set; }
+}
+\end{lstlisting}
+
+Properties mit \texttt{[NotMapped]} werden nicht in der Datenbank angelegt — sie sind nur im C\#-Objekt vorhanden, damit sie in der API-Antwort mitgeschickt werden können.
 
 \section{Konfiguration und Secrets Management}
-\textit{[Wird von Sebastian Radić verfasst]}
+\label{sec:configuration}
+
+\subsection{appsettings.json}
+
+\begin{lstlisting}[caption={appsettings.json}, label={lst:appsettings}]
+{
+  "ConnectionStrings": {
+    "DefaultConnection": "Host=localhost;Port=5432;Database=smartbill;..."
+  },
+  "Tesseract": { "DataPath": "./tessdata" },
+  "Logging": {
+    "LogLevel": { "Default": "Information",
+                  "Microsoft.EntityFrameworkCore": "Warning" }
+  }
+}
+\end{lstlisting}
+
+\subsection{Environment Variables und .env-Datei}
+Sensible Daten (API-Keys, Passwörter) kommen aus Environment Variables, nicht aus der Konfigurationsdatei:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={.env-Datei laden}, label={lst:env_loading}]
+if (builder.Environment.IsDevelopment())
+{
+    var envPath = Path.Combine(Directory.GetCurrentDirectory(), ".env");
+    if (File.Exists(envPath))
+    {
+        foreach (var line in File.ReadAllLines(envPath))
+        {
+            if (string.IsNullOrWhiteSpace(line) || line.StartsWith("#")) continue;
+            var parts = line.Split('=', 2);
+            if (parts.Length == 2)
+                Environment.SetEnvironmentVariable(parts[0].Trim(), parts[1].Trim());
+        }
+    }
+}
+\end{lstlisting}
+
+Die \texttt{.env}-Datei ist in \texttt{.gitignore} und wird nicht ins Repository eingecheckt. Beispieleintrag: \texttt{GEMINI\_API\_KEY=AIzaSy...}. In Produktion werden echte Umgebungsvariablen des Servers verwendet.\footnote{Vgl. The Twelve-Factor App: \textit{III. Config}, \url{https://12factor.net/config}, letzter Zugriff am 06.01.2026}
+
+\subsection{Zugriff in Services}
+
+\begin{lstlisting}[language={[Sharp]C}, caption={API Key laden}, label={lst:config_access}]
+_apiKey = Environment.GetEnvironmentVariable("GEMINI_API_KEY") 
+    ?? throw new InvalidOperationException("GEMINI_API_KEY fehlt");
+\end{lstlisting}
+
+Der \texttt{??\ throw}-Ausdruck lässt die Anwendung sofort abstürzen wenn der Key fehlt, bevor sie überhaupt eine Anfrage bearbeitet. So merkt man den Fehler bei der Inbetriebnahme und nicht erst zur Laufzeit.
 
 \section{Fehlerbehandlung und Resilienzstrategie}
-\textit{[Wird von Sebastian Radić verfasst]}
+\label{sec:error_handling}
+
+\subsection{Try-Catch in Controllern}
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Controller-Fehlerbehandlung}, label={lst:controller_error}]
+[HttpPost("upload")]
+public async Task<IActionResult> UploadPdf(IFormFile file)
+{
+    try
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest(new { error = "Keine Datei" });
+
+        using var stream = file.OpenReadStream();
+        var invoice = await _invoiceService.ProcessInvoiceAsync(stream, file.FileName);
+        return Ok(new { success = true, invoice });
+    }
+    catch (InvalidOperationException ex)
+    {
+        _logger.LogError(ex, "Verarbeitungsfehler bei {FileName}", file?.FileName);
+        return StatusCode(500, new { error = "Verarbeitung fehlgeschlagen", 
+                                     details = ex.Message });
+    }
+    catch (Exception ex)
+    {
+        _logger.LogError(ex, "Unerwarteter Fehler");
+        return StatusCode(500, new { error = "Interner Serverfehler" });
+    }
+}
+\end{lstlisting}
+
+Bekannte Fehler wie \texttt{InvalidOperationException} werden zuerst abgefangen und dem Benutzer mit einer verständlichen Nachricht angezeigt. Der zweite \texttt{catch}-Block fängt alle anderen unerwarteten Fehler. HTTP-Status 500 bedeutet, dass der Server selbst einen Fehler hatte.
+
+\subsection{Strukturiertes Logging mit ILogger}
+Die geschweiften Klammern im Log-Aufruf sind keine normalen Strings, sondern Platzhalter die beim Log-Aggregieren durchsuchbar bleiben:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Strukturiertes Logging}, label={lst:structured_logging}]
+_logger.LogInformation("PDF geoeffnet: {PageCount} Seiten", document.NumberOfPages);
+_logger.LogInformation("Extraktion: {CharCount} Zeichen", extractedText.Length);
+_logger.LogError(ex, "PDF-Extraktion fehlgeschlagen");
+\end{lstlisting}
+
+\texttt{LogError} schreibt automatisch auch den Stack-Trace mit, was bei der Fehlersuche sehr nützlich ist.\footnote{Vgl. Microsoft: \textit{Logging in .NET Core and ASP.NET Core}, \url{https://learn.microsoft.com/en-us/aspnet/core/fundamentals/logging/}, letzter Zugriff am 06.01.2026}
+
+\subsection{HTTP-Statuscodes}
+\begin{itemize}
+    \item \textbf{200 OK}: Verarbeitung erfolgreich, Daten in der Antwort
+    \item \textbf{400 Bad Request}: Eingabefehler auf Client-Seite (fehlende Datei, falsches Format)
+    \item \textbf{404 Not Found}: Angefragte Ressource existiert nicht
+    \item \textbf{500 Internal Server Error}: Fehler auf Serverseite (z.\,B. PDF-Extraktion gescheitert)
+\end{itemize}
+
+\subsection{CORS-Konfiguration}
+Angular läuft auf Port 4200, die API auf Port 5000. Damit das Frontend Anfragen ans Backend schicken darf, muss CORS konfiguriert werden:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={CORS-Policy}, label={lst:cors_policy}]
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("AllowFrontend", policy =>
+        policy.AllowAnyOrigin().AllowAnyMethod().AllowAnyHeader());
+});
+app.UseCors("AllowFrontend");
+\end{lstlisting}
+
+\texttt{AllowAnyOrigin()} ist für die Entwicklung in Ordnung. Im echten Betrieb sollte die Origin auf die konkrete Frontend-URL eingeschränkt werden.\footnote{Vgl. Mozilla: \textit{Cross-Origin Resource Sharing (CORS)}, \url{https://developer.mozilla.org/en-US/docs/Web/HTTP/CORS}, letzter Zugriff am 06.01.2026}

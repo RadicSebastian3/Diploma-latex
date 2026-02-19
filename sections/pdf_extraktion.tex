@@ -1,17 +1,239 @@
-\setauthor{Sebastian Radić}
+\setauthor{Sebastian Radic}
 \chapter{Pipeline zur PDF-Textextraktion}
 \label{chap:pdf_extraktion}
 
-\textit{[Dieses Kapitel wird von Sebastian Radić verfasst und beschreibt die PDF-Textextraktion.]}
+Bevor eine Rechnung verarbeitet werden kann, muss ihr Text ausgelesen werden. Bei digital erstellten PDFs ist das relativ einfach — der Text ist schon als Daten drin. Schwieriger wird es bei eingescannten Dokumenten, wo nur Bilder vorliegen. Dieses Kapitel beschreibt, wie digitale PDFs im \textit{SmartBillConverter} verarbeitet werden.
 
 \section{PdfPig-Integration}
-\textit{[Wird von Sebastian Radić verfasst]}
+\label{sec:pdfpig_integration}
+
+Für die Textextraktion aus digitalen PDFs wird die Open-Source-Bibliothek \textit{PdfPig} eingesetzt. Sie ist in C\# geschrieben und bietet direkten Zugriff auf die interne Struktur von PDF-Dateien.
+
+\subsection{PdfExtractionService: Architektur und Interface}
+
+Das Interface des Services ist bewusst einfach gehalten:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={IPdfExtractionService Interface}, label={lst:pdf_interface}]
+public interface IPdfExtractionService
+{
+    Task<string> ExtractTextFromPdfAsync(Stream pdfStream);
+}
+\end{lstlisting}
+
+Als Parameter nimmt das Interface einen \texttt{Stream} statt einem Dateipfad. Das ist praktischer, weil der Stream sowohl von einer hochgeladenen Datei als auch aus einem Speicherpuffer kommen kann. Async ist die Methode, weil das Lesen von Streams eine I/O-Operation ist, die den Server nicht blockieren soll.
+
+\subsection{Stream-Handling und Document-Opening}
+
+\begin{lstlisting}[language={[Sharp]C}, caption={PDF Stream-Verarbeitung}, label={lst:pdf_stream}]
+public async Task<string> ExtractTextFromPdfAsync(Stream pdfStream)
+{
+    try
+    {
+        if (pdfStream.CanSeek) pdfStream.Position = 0;
+
+        var extractedText = new StringBuilder();
+        
+        using (var document = PdfDocument.Open(pdfStream))
+        {
+            _logger.LogInformation("PDF geoeffnet - {PageCount} Seiten", 
+                document.NumberOfPages);
+            // Seiten-Iteration folgt...
+        }
+        return await Task.FromResult(extractedText.ToString());
+    }
+    catch (Exception ex)
+    {
+        _logger.LogError(ex, "Kritischer Fehler bei der PDF-Extraktion");
+        return await Task.FromResult(GenerateFallbackDemoText());
+    }
+}
+\end{lstlisting}
+
+Das Zurücksetzen der Stream-Position ist wichtig: Hat der Controller den Stream vorher schon für eine Prüfung gelesen, steht der Lesezeiger am Ende. Ohne Reset sieht PdfPig eine leere Datei. \texttt{CanSeek} prüft vorher ob das überhaupt möglich ist.
+
+Mit \texttt{using} wird das \texttt{PdfDocument} nach der Verarbeitung automatisch aus dem Speicher entfernt. Da PdfPig das ganze Dokument lädt, ist das 10\,MB-Limit im Controller wichtig.\footnote{Vgl. UglyToad: \textit{PdfPig Documentation -- Opening Documents}, \url{https://github.com/UglyToad/PdfPig/wiki/Opening-documents}, letzter Zugriff am 06.01.2026}
+
+\subsection{Seitenweise Extraktion mit Fehler-Isolation}
+
+PDFs können einzelne kaputte Seiten enthalten. Die Implementierung verarbeitet jede Seite in einem eigenen Try-Catch-Block:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Robuste Seiten-Iteration}, label={lst:pdf_page_iteration}]
+for (int pageNumber = 1; pageNumber <= document.NumberOfPages; pageNumber++)
+{
+    extractedText.AppendLine($"--- Seite {pageNumber} ---");
+    try
+    {
+        var page = document.GetPage(pageNumber);
+        var pageText = ExtractTextFromPage(page);
+        
+        if (!string.IsNullOrWhiteSpace(pageText))
+            extractedText.AppendLine(pageText);
+        else
+            extractedText.AppendLine("[Keine lesbaren Textinhalte auf dieser Seite]");
+    }
+    catch (Exception pageEx)
+    {
+        extractedText.AppendLine($"[Fehler Seite {pageNumber}: {pageEx.Message}]");
+    }
+    extractedText.AppendLine();
+}
+\end{lstlisting}
+
+Wenn Seite 2 defekt ist, werden Seite 1 und 3 trotzdem extrahiert. Die Fehlermeldung wird direkt in den Text geschrieben, sodass das KI-Modell im nächsten Schritt sieht, dass Seite 2 fehlt.
+
+\subsection{Geometrische Wortsortierung}
+
+PdfPig gibt einzelne Wörter mit ihren Koordinaten zurück — keine Zeilen. Die richtige Lesereihenfolge muss erst rekonstruiert werden:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Geometrische Wort-Sortierung}, label={lst:word_extraction}]
+private string ExtractTextFromPage(Page page)
+{
+    var words = page.GetWords();
+    if (words == null || !words.Any()) return "";
+
+    var sortedWords = words
+        .OrderBy(w => Math.Round(w.BoundingBox.Bottom, 1))
+        .ThenBy(w => Math.Round(w.BoundingBox.Left, 1))
+        .ToList();
+
+    var extractedText = new StringBuilder();
+    var currentLine = new StringBuilder();
+    double? currentLineY = null;
+    const double lineHeightTolerance = 5.0;
+
+    foreach (var word in sortedWords)
+    {
+        var wordY = Math.Round(word.BoundingBox.Bottom, 1);
+        if (currentLineY.HasValue && 
+            Math.Abs(wordY - currentLineY.Value) > lineHeightTolerance)
+        {
+            if (currentLine.Length > 0)
+            {
+                extractedText.AppendLine(currentLine.ToString().Trim());
+                currentLine.Clear();
+            }
+        }
+        if (currentLine.Length > 0) currentLine.Append(" ");
+        currentLine.Append(word.Text);
+        currentLineY = wordY;
+    }
+    if (currentLine.Length > 0)
+        extractedText.AppendLine(currentLine.ToString().Trim());
+
+    return CleanExtractedText(extractedText.ToString().Trim());
+}
+\end{lstlisting}
+
+Sortiert wird zuerst nach Y-Koordinate (Zeile von oben nach unten), dann nach X (Wort von links nach rechts). \texttt{BoundingBox.Bottom} ist im PDF-Koordinatensystem die untere Wortkante. Die Toleranz von 5\,Punkten (rund 1,8\,mm) verträgt kleine vertikale Verschiebungen innerhalb einer Zeile.\footnote{Vgl. PDF Reference 1.7: \textit{Coordinate Systems}, Adobe Systems, 2006, S.~117--120}
 
 \section{Textbereinigung und Normalisierung}
-\textit{[Wird von Sebastian Radić verfasst]}
+\label{sec:text_cleaning}
+
+Der Rohtext direkt aus dem PDF enthält oft störende Artefakte: mehrfache Leerzeichen, zu viele Leerzeilen, Whitespace am Anfang jeder Zeile.
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Text-Bereinigung mit Regex}, label={lst:text_cleaning}]
+private string CleanExtractedText(string text)
+{
+    if (string.IsNullOrEmpty(text)) return text;
+    try
+    {
+        text = Regex.Replace(text, @" +", " ");
+        text = Regex.Replace(text, @"\n{3,}", "\n\n");
+        var lines = text.Split('\n')
+            .Select(line => line.Trim())
+            .Where(line => !string.IsNullOrEmpty(line));
+        return string.Join('\n', lines);
+    }
+    catch (Exception ex)
+    {
+        _logger.LogWarning(ex, "Fehler beim Bereinigen");
+        return text;
+    }
+}
+\end{lstlisting}
+
+\texttt{@" +"} matched ein oder mehr Leerzeichen und ersetzt sie durch ein einzelnes. \texttt{@"\textbackslash n\{3,\}"} kürzt drei oder mehr Leerzeilen auf maximal zwei. Die \texttt{Trim()}-Kette entfernt führende und nachfolgende Leerzeichen pro Zeile.
 
 \section{Fehlerbehandlung und Fallback-Strategien}
-\textit{[Wird von Sebastian Radić verfasst]}
+\label{sec:pdf_fehlerbehandlung}
+
+\subsection{Fallback bei leerem Text}
+
+Manche PDFs enthalten trotz vorhandenem Dateiformat keinen lesbaren Text (z.\,B. eingescannte PDFs ohne Text-Overlay):
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Leertext-Erkennung}, label={lst:fallback_check}]
+var result = extractedText.ToString();
+
+if (string.IsNullOrWhiteSpace(result) || 
+    result.Contains("[Keine lesbaren Textinhalte") ||
+    result.Replace("---", "").Replace("Seite", "").Trim().Length < 50)
+{
+    _logger.LogWarning("Wenig Text extrahiert, Fallback aktiv");
+    result += "\n\n" + GenerateFallbackDemoText();
+}
+\end{lstlisting}
+
+Die Prüfung schaut auf drei Dinge: komplett leer, nur Fehlermeldungen, oder nach dem Herausrechnen der Seitentrennzeilen weniger als 50 Zeichen. Trifft eines zu, wird ein Demo-Text angehängt damit das KI-Modell trotzdem etwas verarbeiten kann.
+
+\subsection{Entscheidungslogik: PDF vs.\ OCR}
+
+Im \texttt{InvoiceService} wird anhand der Dateiendung entschieden welche Methode zum Einsatz kommt:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={PDF-oder-OCR-Entscheidung}, label={lst:extraction_decision}]
+if (fileName.EndsWith(".pdf", StringComparison.OrdinalIgnoreCase))
+{
+    extractedText = await _pdfService.ExtractTextFromPdfAsync(pdfStream);
+    
+    if (string.IsNullOrWhiteSpace(extractedText) || extractedText.Length < 100)
+        _logger.LogWarning("PDF wahrscheinlich gescannt, wenig Text gefunden");
+}
+else
+{
+    extractedText = await _ocrService.ExtractTextFromImageAsync(pdfStream, fileName);
+}
+\end{lstlisting}
+
+Ein häufiges Problem ist das \textit{gescannte PDF}: eine Datei mit \texttt{.pdf}-Endung, die aber nur ein Scan-Bild enthält ohne echten Text. Die Heuristik \texttt{Length < 100} erkennt diesen Fall und könnte einen OCR-Fallback auslösen.
 
 \section{Bekannte Sonderfälle}
-\textit{[Wird von Sebastian Radić verfasst: gescannte PDFs, Tabellen, Mehrspalten]}
+\label{sec:sonderfaelle}
+
+Die PdfPig-Integration funktioniert gut für typische einspaltige Rechnungen. Es gibt aber Situationen, wo Probleme entstehen.
+
+\subsection{Gescannte PDFs}
+
+Wenn ein PDF kein Text-Overlay hat, gibt PdfPig eine leere Liste zurück. Der Benutzer bekommt keine direkte Fehlermeldung, sondern das Fallback-System greift ein. Im echten Produktionseinsatz wäre hier ein automatischer OCR-Fallback sinnvoll:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={OCR-Fallback fuer gescannte PDFs (Konzept)}, label={lst:ocr_fallback}]
+if (extractedText.Length < 100)
+{
+    pdfStream.Position = 0;
+    var images = await ConvertPdfToImages(pdfStream);
+    var ocrTexts = new List<string>();
+    foreach (var image in images)
+        ocrTexts.Add(await _ocrService.ExtractTextFromImageAsync(
+            image.Stream, $"page{image.PageNumber}.png"));
+    extractedText = string.Join("\n--- Naechste Seite ---\n", ocrTexts);
+}
+\end{lstlisting}
+
+\texttt{ConvertPdfToImages} würde jede PDF-Seite in ein Bild rendern (z.\,B. mit SkiaSharp). Das ist in der aktuellen Version noch nicht eingebaut.
+
+\subsection{Mehrspaltige Layouts}
+
+Das geometrische Sortierverfahren geht davon aus, dass der Text in einer einzigen Spalte von oben nach unten fließt. Bei zweispaltigen Rechnungen kommt es zu Problemen: Wörter der linken und rechten Spalte auf derselben Y-Höhe werden in der falschen Reihenfolge zusammengeführt.
+
+Beispiel: Steht links \glqq Rechnungsnummer:\grqq{} und rechts \glqq Kundennummer:\grqq{} auf gleicher Höhe, entstehen unter Umständen Mischzeilen wie \glqq Rechnungsnummer: Kundennummer:\grqq. Das KI-Modell kann damit meistens noch umgehen, aber es erhöht das Risiko von Extraktionsfehlern.
+
+Eine Lösung wäre, Spalten anhand von Lücken im X-Koordinatenraum zu erkennen und separat zu verarbeiten. Das ist im aktuellen Stand nicht umgesetzt.
+
+\subsection{Tabellarische Positionen}
+
+Rechnungspositionen werden in PDFs meist als Tabelle dargestellt. Die geometrische Sortierung rekonstruiert Tabellenzeilen korrekt, solange die Zeilen klar voneinander getrennt sind. Problematisch wird es bei:
+\begin{itemize}
+    \item Sehr dicht beieinanderliegenden Zeilen (Zeilenabstand unter 5\,Punkte)
+    \item Beschreibungstexten die über mehrere Zeilen umbrechen
+    \item Spalten ohne klare Trennlinie
+\end{itemize}
+
+In solchen Fällen kann der extrahierte Text unübersichtlich werden. Das KI-Modell im nächsten Schritt ist aber darauf trainiert, trotzdem die richtigen Zahlen herauszulesen — sofern alle Werte im Text vorhanden sind.\footnote{Vgl. UglyToad: \textit{PdfPig -- Page and Word Extraction}, \url{https://github.com/UglyToad/PdfPig/wiki/Words}, letzter Zugriff am 06.01.2026}

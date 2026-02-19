@@ -1,14 +1,170 @@
-\setauthor{Sebastian Radić}
+\setauthor{Sebastian Radic}
 \chapter{Generierung von ebInterface 6.1}
 \label{chap:ebinterface_generierung}
 
-\textit{[Dieses Kapitel wird von Sebastian Radić verfasst und beschreibt die ebInterface-Generierung.]}
+Nachdem das KI-Modell die Rechnungsdaten in das interne \texttt{InvoiceData}-Objekt extrahiert hat, muss dieses in ein gültiges ebInterface 6.1 XML umgewandelt werden. Für das Bundesrechenzentrum und österreichische Behörden ist dieses Format Pflicht.
 
 \section{Objektmodell-Mapping}
-\textit{[Wird von Sebastian Radić verfasst: Käufer, Lieferant, Bank, Positionen, Steuern]}
+\label{sec:ebinterface_mapping}
+
+\subsection{C\#-Klassen für die XML-Struktur}
+
+Die ebInterface-Struktur wird direkt als C\#-Objektmodell abgebildet, weil der \texttt{XmlSerializer} dann die Arbeit des XML-Schreibens übernimmt:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={ebInterface Root-Element}, label={lst:ebinterface_root}]
+[XmlRoot("Invoice", Namespace = "http://www.ebinterface.at/schema/6p1/")]
+public class EbInterfaceInvoice
+{
+    [XmlElement("InvoiceNumber")]
+    public string InvoiceNumber { get; set; } = string.Empty;
+
+    [XmlElement("InvoiceDate", DataType = "date")]
+    public DateTime InvoiceDate { get; set; }
+
+    [XmlElement("Biller")]
+    public BillerType Biller { get; set; } = new();
+
+    [XmlElement("InvoiceRecipient")]
+    public InvoiceRecipientType InvoiceRecipient { get; set; } = new();
+
+    [XmlElement("Details")]
+    public DetailsType Details { get; set; } = new();
+
+    [XmlElement("Tax")]
+    public TaxType Tax { get; set; } = new();
+
+    [XmlElement("TotalGrossAmount")]
+    public decimal TotalGrossAmount { get; set; }
+
+    [XmlAttribute("GeneratingSystem")]
+    public string GeneratingSystem { get; set; } = "SmartBillConverter v1.0";
+
+    [XmlAttribute("InvoiceCurrency")]
+    public string InvoiceCurrency { get; set; } = "EUR";
+}
+\end{lstlisting}
+
+\texttt{[XmlRoot]} definiert den Root-Tag und den XML-Namespace. \texttt{[XmlElement]} mappt eine Property auf einen XML-Tag. \texttt{DataType = "date"} erzwingt das ISO-8601-Format (\texttt{YYYY-MM-DD}).
+
+Die verschachtelten Typen für Rechnungssteller und Empfänger:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Adress- und Rechnungssteller-Typen}, label={lst:ebinterface_nested}]
+public class BillerType
+{
+    [XmlElement("VATIdentificationNumber")]
+    public string VATIdentificationNumber { get; set; } = string.Empty;
+
+    [XmlElement("Address")]
+    public AddressType Address { get; set; } = new();
+}
+
+public class AddressType
+{
+    [XmlElement("Name")]
+    public string Name { get; set; } = string.Empty;
+
+    [XmlElement("Street")]
+    public string? Street { get; set; }
+
+    [XmlElement("ZIP")]
+    public string? ZIP { get; set; }
+
+    [XmlElement("Town")]
+    public string? Town { get; set; }
+
+    [XmlElement("Country")]
+    public string? Country { get; set; }
+}
+\end{lstlisting}
+
+Aus \texttt{InvoiceData.BillerName} und \texttt{BillerStreet} etc.\ werden die entsprechenden Felder in \texttt{BillerType.Address} befüllt. Das Mapping ist dabei direkt und ohne Logik — ein Feld geht in das andere.
 
 \section{Serialisierung mit XmlSerializer}
-\textit{[Wird von Sebastian Radić verfasst: Namespaces]}
+\label{sec:ebinterface_serialisierung}
+
+\begin{lstlisting}[language={[Sharp]C}, caption={ebInterface XML-Generierung}, label={lst:ebinterface_serialization}]
+private string SerializeToEbInterfaceXml(EbInterfaceInvoice invoice)
+{
+    var namespaces = new XmlSerializerNamespaces();
+    namespaces.Add("", "http://www.ebinterface.at/schema/6p1/");
+
+    var serializer = new XmlSerializer(typeof(EbInterfaceInvoice));
+    var settings = new XmlWriterSettings
+    {
+        Indent            = true,
+        IndentChars       = "  ",
+        Encoding          = Encoding.UTF8,
+        OmitXmlDeclaration = false
+    };
+
+    using var stringWriter = new StringWriter();
+    using var xmlWriter    = XmlWriter.Create(stringWriter, settings);
+    serializer.Serialize(xmlWriter, invoice, namespaces);
+    return stringWriter.ToString();
+}
+\end{lstlisting}
+
+\texttt{XmlSerializerNamespaces} verhindert, dass der Serializer automatisch unerwünschte Namespace-Präfixe wie xsi und xsd hinzufügt. \texttt{XmlWriterSettings} sorgt für einen lesbaren Einzug und stellt sicher, dass der XML-Header (\texttt{<?xml version="1.0"?>}) ganz oben steht.\footnote{Vgl. Microsoft: \textit{XmlSerializer Class}, \url{https://learn.microsoft.com/en-us/dotnet/api/system.xml.serialization.xmlserializer}, letzter Zugriff am 06.01.2026}
 
 \section{XSD-Validierung und Korrekturstrategien}
-\textit{[Wird von Sebastian Radić verfasst]}
+\label{sec:ebinterface_validierung}
+
+\subsection{Validierung gegen das offizielle Schema}
+
+Nach der Serialisierung wird das generierte XML gegen das offizielle ebInterface 6.1 XSD-Schema geprüft:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={XSD-Validierung}, label={lst:xsd_validation}]
+private List<string> ValidateAgainstXsd(string xml, string xsdPath)
+{
+    var errors  = new List<string>();
+    var schemas = new XmlSchemaSet();
+    schemas.Add("http://www.ebinterface.at/schema/6p1/", xsdPath);
+
+    var settings = new XmlReaderSettings
+    {
+        ValidationType = ValidationType.Schema,
+        Schemas        = schemas
+    };
+    settings.ValidationEventHandler += (sender, args) =>
+    {
+        errors.Add($"{args.Severity}: {args.Message}");
+        _logger.LogWarning("XSD: {Sev} - {Msg}", args.Severity, args.Message);
+    };
+
+    using var xmlReader = XmlReader.Create(new StringReader(xml), settings);
+    try { while (xmlReader.Read()) { } }
+    catch (XmlException ex) { errors.Add($"Parse Error: {ex.Message}"); }
+
+    return errors;
+}
+\end{lstlisting}
+
+\texttt{XmlSchemaSet} lädt das XSD-File einmalig in den Speicher. \texttt{ValidationEventHandler} wird für jeden Fehler aufgerufen und sammelt alle Probleme, nicht nur den ersten. Das Durchlaufen des gesamten XML mit \texttt{while (xmlReader.Read())} sorgt dafür, dass auch Fehler auf den letzten Seiten gefunden werden.
+
+\subsection{Typische Validierungsfehler}
+
+\begin{itemize}
+    \item \textbf{Fehlendes Pflichtfeld}: \texttt{Element 'Invoice' missing required child 'InvoiceNumber'} — passiert wenn das KI-Modell keine Rechnungsnummer im Text findet
+    \item \textbf{Falsches Datumsformat}: \texttt{Value '01.01.2024' is invalid according to datatype 'date'} — das deutsche Datumsformat muss erst in ISO-Format konvertiert werden
+    \item \textbf{Ungültiger Währungscode}: \texttt{Value 'Euro' is not valid for attribute 'InvoiceCurrency'} — nur dreistellige ISO-4217-Codes wie \texttt{EUR} sind erlaubt
+\end{itemize}
+
+\subsection{Korrekturstrategie bei Fehlern}
+
+Die \texttt{ValidationErrors}-Liste in der \texttt{LlmResponse} gibt dem Frontend genaue Informationen, was schiefgelaufen ist. Bei kritischen Fehlern (fehlendes Pflichtfeld) sollte der Benutzer aufgefordert werden, die Rechnung manuell zu überprüfen. Bei Formatfehlern (falsches Datum) kann das Backend oft automatisch korrigieren:
+
+\begin{lstlisting}[language={[Sharp]C}, caption={Datum-Korrektur bei Validierungsfehlern}, label={lst:date_correction}]
+// Deutschen Datumsformat zu ISO konvertieren
+if (DateTime.TryParseExact(rawDate, "dd.MM.yyyy",
+    CultureInfo.InvariantCulture, DateTimeStyles.None, out var date))
+{
+    invoice.InvoiceDate = date;
+}
+else if (!DateTime.TryParse(rawDate, out date))
+{
+    _logger.LogWarning("Datum nicht parsebar: {RawDate}", rawDate);
+    invoice.InvoiceDate = DateTime.Today; // Fallback
+}
+\end{lstlisting}
+
+\footnote{Vgl. Bundesrechenzentrum: \textit{ebInterface 6.1 Spezifikation}, \url{https://www.ebinterface.at/download/ebinterface-6.1-specification.pdf}, letzter Zugriff am 06.01.2026}
