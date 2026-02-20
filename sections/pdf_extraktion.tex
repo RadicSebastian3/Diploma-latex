@@ -2,7 +2,7 @@
 \chapter{Pipeline zur PDF-Textextraktion}
 \label{chap:pdf_extraktion}
 
-Bevor eine Rechnung verarbeitet werden kann, muss ihr Text ausgelesen werden. Bei digital erstellten PDFs ist das relativ einfach — der Text ist schon als Daten drin. Schwieriger wird es bei eingescannten Dokumenten, wo nur Bilder vorliegen. Dieses Kapitel beschreibt, wie digitale PDFs im \textit{SmartBillConverter} verarbeitet werden.
+Bevor eine Rechnung verarbeitet werden kann, muss ihr Text ausgelesen werden. Bei digital erstellten PDFs ist das relativ einfach - der Text ist schon als Daten drin. Schwieriger wird es bei eingescannten Dokumenten, wo nur Bilder vorliegen. Dieses Kapitel beschreibt, wie digitale PDFs im \textit{SmartBillConverter} verarbeitet werden.
 
 \section{PdfPig-Integration}
 \label{sec:pdfpig_integration}
@@ -51,7 +51,7 @@ public async Task<string> ExtractTextFromPdfAsync(Stream pdfStream)
 
 Das Zurücksetzen der Stream-Position ist wichtig: Hat der Controller den Stream vorher schon für eine Prüfung gelesen, steht der Lesezeiger am Ende. Ohne Reset sieht PdfPig eine leere Datei. \texttt{CanSeek} prüft vorher ob das überhaupt möglich ist.
 
-Mit \texttt{using} wird das \texttt{PdfDocument} nach der Verarbeitung automatisch aus dem Speicher entfernt. Da PdfPig das ganze Dokument lädt, ist das 10\,MB-Limit im Controller wichtig.\footnote{Vgl. UglyToad: \textit{PdfPig Documentation -- Opening Documents}, \url{https://github.com/UglyToad/PdfPig/wiki/Opening-documents}, letzter Zugriff am 06.01.2026}
+Mit \texttt{using} wird das \texttt{PdfDocument} nach der Verarbeitung automatisch aus dem Speicher entfernt. Da PdfPig das ganze Dokument lädt, ist das 10\,MB-Limit im Controller wichtig.\footnote{Vgl. UglyToad: \textit{PdfPig Documentation - Opening Documents}, \url{https://github.com/UglyToad/PdfPig/wiki/Opening-documents}, letzter Zugriff am 06.01.2026}
 
 \subsection{Seitenweise Extraktion mit Fehler-Isolation}
 
@@ -83,7 +83,7 @@ Wenn Seite 2 defekt ist, werden Seite 1 und 3 trotzdem extrahiert. Die Fehlermel
 
 \subsection{Geometrische Wortsortierung}
 
-PdfPig gibt einzelne Wörter mit ihren Koordinaten zurück — keine Zeilen. Die richtige Lesereihenfolge muss erst rekonstruiert werden:
+PdfPig gibt einzelne Wörter mit ihren Koordinaten zurück - keine Zeilen. Die richtige Lesereihenfolge muss erst rekonstruiert werden:
 
 \begin{lstlisting}[language={[Sharp]C}, caption={Geometrische Wort-Sortierung}, label={lst:word_extraction}]
 private string ExtractTextFromPage(Page page)
@@ -124,7 +124,7 @@ private string ExtractTextFromPage(Page page)
 }
 \end{lstlisting}
 
-Sortiert wird zuerst nach Y-Koordinate (Zeile von oben nach unten), dann nach X (Wort von links nach rechts). \texttt{BoundingBox.Bottom} ist im PDF-Koordinatensystem die untere Wortkante. Die Toleranz von 5\,Punkten (rund 1,8\,mm) verträgt kleine vertikale Verschiebungen innerhalb einer Zeile.\footnote{Vgl. PDF Reference 1.7: \textit{Coordinate Systems}, Adobe Systems, 2006, S.~117--120}
+Sortiert wird zuerst nach Y-Koordinate (Zeile von oben nach unten), dann nach X (Wort von links nach rechts). \texttt{BoundingBox.Bottom} ist im PDF-Koordinatensystem die untere Wortkante. Die Toleranz von 5\,Punkten (rund 1,8\,mm) verträgt kleine vertikale Verschiebungen innerhalb einer Zeile.\footnote{Vgl. PDF Reference 1.7: \textit{Coordinate Systems}, Adobe Systems, 2006, S.~117-120}
 
 \section{Textbereinigung und Normalisierung}
 \label{sec:text_cleaning}
@@ -236,4 +236,4 @@ Rechnungspositionen werden in PDFs meist als Tabelle dargestellt. Die geometrisc
     \item Spalten ohne klare Trennlinie
 \end{itemize}
 
-In solchen Fällen kann der extrahierte Text unübersichtlich werden. Das KI-Modell im nächsten Schritt ist aber darauf trainiert, trotzdem die richtigen Zahlen herauszulesen — sofern alle Werte im Text vorhanden sind.\footnote{Vgl. UglyToad: \textit{PdfPig -- Page and Word Extraction}, \url{https://github.com/UglyToad/PdfPig/wiki/Words}, letzter Zugriff am 06.01.2026}
+In solchen Fällen kann der extrahierte Text unübersichtlich werden. Das KI-Modell im nächsten Schritt ist aber darauf trainiert, trotzdem die richtigen Zahlen herauszulesen - sofern alle Werte im Text vorhanden sind.\footnote{Vgl. UglyToad: \textit{PdfPig - Page and Word Extraction}, \url{https://github.com/UglyToad/PdfPig/wiki/Words}, letzter Zugriff am 06.01.2026}

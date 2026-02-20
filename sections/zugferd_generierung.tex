@@ -39,7 +39,7 @@ public class ZugferdParty
 }
 \end{lstlisting}
 
-Das Modell verwendet \texttt{Seller}/\texttt{Buyer} statt \texttt{Biller}/\texttt{Recipient} — das ist die ZUGFeRD-typische Benennung.
+Das Modell verwendet \texttt{Seller}/\texttt{Buyer} statt \texttt{Biller}/\texttt{Recipient} - das ist die ZUGFeRD-typische Benennung.
 
 \subsection{XML-Namespaces}
 
@@ -179,9 +179,9 @@ Ohne die \texttt{Order}-Attribute würde der \texttt{XmlSerializer} die Reihenfo
 Wenn das KI-Modell ein Pflichtfeld nicht findet, muss das Backend trotzdem ein gültiges XML produzieren können. Für ZUGFeRD sind besonders heikel:
 
 \begin{itemize}
-    \item \texttt{GuidelineSpecifiedDocumentContextParameter.ID} — ohne dieses Feld ist das Dokument kein gültiges ZUGFeRD
-    \item \texttt{SellerTradeParty.Name} — Rechnungssteller ist immer Pflicht
-    \item \texttt{TaxTotalAmount} — muss mit Positionen übereinstimmen (BR-S-08)
+    \item \texttt{GuidelineSpecifiedDocumentContextParameter.ID} - ohne dieses Feld ist das Dokument kein gültiges ZUGFeRD
+    \item \texttt{SellerTradeParty.Name} - Rechnungssteller ist immer Pflicht
+    \item \texttt{TaxTotalAmount} - muss mit Positionen übereinstimmen (BR-S-08)
 \end{itemize}
 
 Die Defaultwerte in den C\#-Klassen (z.\,B. \texttt{Country = "AT"}, \texttt{Currency = "EUR"}) greifen automatisch wenn kein Wert befüllt wird.
@@ -192,6 +192,6 @@ ZUGFeRD ist eigentlich ein hybrides Format: PDF mit eingebettetem XML. Im aktuel
 
 \subsection{Schematron-Validierung (noch nicht implementiert)}
 
-Während XSD nur prüft ob die Struktur stimmt, würde Schematron auch inhaltliche Regeln prüfen können — zum Beispiel ob die Summe aller Positionssteuerbeträge mit dem Gesamtsteuerbetrag übereinstimmt (BR-S-08). Das ist im Projekt nicht eingebaut, wäre aber für einen echten Einsatz sinnvoll.\footnote{Vgl. KoSIT: \textit{ZUGFeRD 2.3 Schematron Validation Rules}, \url{https://www.ferd-net.de/standards/zugferd-2.x/index.html}, letzter Zugriff am 06.01.2026}
+Während XSD nur prüft ob die Struktur stimmt, würde Schematron auch inhaltliche Regeln prüfen können - zum Beispiel ob die Summe aller Positionssteuerbeträge mit dem Gesamtsteuerbetrag übereinstimmt (BR-S-08). Das ist im Projekt nicht eingebaut, wäre aber für einen echten Einsatz sinnvoll.\footnote{Vgl. KoSIT: \textit{ZUGFeRD 2.3 Schematron Validation Rules}, \url{https://www.ferd-net.de/standards/zugferd-2.x/index.html}, letzter Zugriff am 06.01.2026}
 
 Die Korrektheit der Steuerberechnung wird aktuell durch den deterministischen Code in \texttt{Calculate\-Line\-Items} sichergestellt (Kapitel \ref{sec:ki_mapping}). Das LLM liefert die Rohdaten, das Backend rechnet selbst nach.

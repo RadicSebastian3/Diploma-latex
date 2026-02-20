@@ -4,7 +4,7 @@
 
 Nicht jede digitale Datei, die eine Rechnung darstellt, ist auch wirklich eine elektronische Rechnung im rechtlichen und technischen Sinne. Ein eingescanntes Papier oder ein aus Word exportiertes PDF ist zwar für Menschen lesbar, für Software aber nur ein Bild ohne strukturierten Inhalt. Erst wenn die Rechnungsdaten in einem maschinenlesbaren Format vorliegen, kann eine Software wie der \textit{SmartBillConverter} diese automatisch verarbeiten.
 
-Dieses Kapitel erklärt die zwei für das Projekt wichtigen XML-basierten E-Rechnungsstandards — das österreichische \textit{ebInterface 6.1} und das deutsche Hybridformat \textit{ZUGFeRD 2.3} — sowie deren Bezug zur europäischen Norm EN 16931. Beide Standards lösen das gleiche Problem auf unterschiedliche Weise und haben dabei jeweils eigene Stärken und Schwächen.
+Dieses Kapitel erklärt die zwei für das Projekt wichtigen XML-basierten E-Rechnungsstandards - das österreichische \textit{ebInterface 6.1} und das deutsche Hybridformat \textit{ZUGFeRD 2.3} - sowie deren Bezug zur europäischen Norm EN 16931. Beide Standards lösen das gleiche Problem auf unterschiedliche Weise und haben dabei jeweils eigene Stärken und Schwächen.
 
 \section{ebInterface 6.1 (Österreich)}
 \label{sec:ebinterface}
@@ -15,7 +15,7 @@ Unter der Trägerschaft der AUSTRIAPRO, einer Serviceeinrichtung der Wirtschafts
 Einen entscheidenden Verbreitungsschub erlebte ebInterface im Jahr 2014, als die verpflichtende elektronische Rechnungslegung gegenüber österreichischen Behörden gesetzlich verankert wurde. Seitdem ist ebInterface die Pflichtgrundlage für alle Rechnungen, die über das Unternehmensserviceportal (USP) eingereicht werden, was dazu geführt hat, dass das Format auch außerhalb des öffentlichen Sektors immer weiter verbreitet ist.\footnote{Vgl. AUSTRIAPRO: \textit{ebInterface - Der österreichische Standard für die elektronische Rechnung}, \url{https://www.ebinterface.at/}, letzter Zugriff am 19.12.2025}
 
 \subsection{Kernelemente und Struktur}
-Im Gegensatz zu ZUGFeRD enthält eine ebInterface-Datei kein lesbares PDF-Layout — sie ist ausschließlich eine XML-Datei mit den Rechnungsdaten. Wer eine ebInterface-Rechnung mit eigenen Augen lesen will, braucht entweder einen speziellen Viewer oder muss sie zuerst mit XSLT in ein lesbares Format umwandeln.
+Im Gegensatz zu ZUGFeRD enthält eine ebInterface-Datei kein lesbares PDF-Layout - sie ist ausschließlich eine XML-Datei mit den Rechnungsdaten. Wer eine ebInterface-Rechnung mit eigenen Augen lesen will, braucht entweder einen speziellen Viewer oder muss sie zuerst mit XSLT in ein lesbares Format umwandeln.
 
 Die Struktur einer ebInterface 6.1 Datei ist hierarchisch aufgebaut und besteht aus folgenden Hauptbereichen:
 \begin{itemize}
@@ -117,7 +117,11 @@ ZUGFeRD 2.3 setzt die europäische Norm EN 16931 um. Da die Anforderungen je nac
 Für die XML-Struktur verwendet ZUGFeRD das \textit{Cross Industry Invoice} (CII) Schema der UN/CEFACT. Dieser Standard wurde eigentlich für komplexe globale Lieferketten entwickelt und ist daher für eine einfache Rechnung deutlich umfangreicher als nötig. Ein gutes Beispiel: Ein einfacher Einzelpreis ist in CII kein einfacher Zahlenwert, sondern ein ganzes Objekt mit Betrag, Währung, Basismenge und Einheitencode als separate Felder.
 
 Beispielhafte Verschachtelung in CII:
-\texttt{SupplyChainTradeTransaction} $\rightarrow$ \texttt{IncludedSupplyChainTradeLineItem} $\rightarrow$ \texttt{SpecifiedLineTradeAgreement} $\rightarrow$ \texttt{NetPriceProductTradePrice} $\rightarrow$ \texttt{ChargeAmount}.
+\texttt{Supply\-Chain\-Trade\-Transaction} $\rightarrow$
+\texttt{Included\-Supply\-Chain\-Trade\-Line\-Item} $\rightarrow$
+\texttt{Specified\-Line\-Trade\-Agreement} $\rightarrow$
+\texttt{Net\-Price\-Product\-Trade\-Price} $\rightarrow$
+\texttt{Charge\-Amount}.
 Diese hohe Komplexität macht die Implementierung eines Mappers anspruchsvoll, da hunderte von Pfaden korrekt ausgefüllt werden müssen, um Validierungsfehler zu vermeiden.\footnote{Vgl. FeRD e.V.: \textit{ZUGFeRD 2.3 - Das Datenformat für elektronische Rechnungen}, \url{https://www.ferd-net.de/standards/zugferd-2.3/index.html}, letzter Zugriff am 19.12.2025}
 Das folgende Beispiel stellt ein Ausschnitt einer ZUGFeRD-XML dar, der die Komplexität im Vergleich zu ebInterface verdeutlicht. Es sollten die tiefen Verschachtelungen für einfache Informationen wie den Steuerbetrag beachtet werden.
 
@@ -159,7 +163,7 @@ Interessant ist, dass die Norm EN 16931 zwei völlig unterschiedliche XML-Format
 
 Ein konkretes Beispiel ist die Handhabung von Steuern:
 \begin{itemize}
-    \item In \textbf{UBL} werden Steuern häufig direkt auf Zeilenebene referenziert (\texttt{ClassifiedTaxCategory}).
+    \item In \textbf{UBL} werden Steuern häufig direkt auf Zeilenebene referenziert (\texttt{Classified\-Tax\-Category}).
     \item In \textbf{CII} gibt es komplexe \texttt{ApplicableTradeTax}-Strukturen, die sowohl auf Dokumentenebene (Summen) als auch auf Zeilenebene (Referenzen) übereinstimmend geführt werden müssen.
 \end{itemize}
 
@@ -181,7 +185,7 @@ Tabelle \ref{tab:format_comparison} fasst die bedeutenden Unterschiede zusammen,
     \hline
     Struktur-Tiefe & Flach bis Mittel & Sehr tief verschachtelt \\
     \hline
-    Steuer-Logik & Zentraler Tax-Block & Verteilt (Line & Header) \\
+    Steuer-Logik & Zentraler Tax-Block & Verteilt (Line \& Header) \\
     \hline
     Pflichtfelder & Fokus auf UStG (AT) & Fokus auf EN 16931 (EU) \\
     \hline
@@ -202,7 +206,7 @@ Das XSD (XML Schema Definition) des jeweiligen Standards beschreibt genau, wie d
     \item Vollständigkeit der obligatorischen Felder?
     \item Korrektheit des Datumsformats (strikt ISO 8601: YYYY-MM-DD)?
     \item Numerische Typen ohne unerlaubte String-Repräsentationen?
-    \item Einhaltung der Elementreihenfolge \textemdash{} insbesondere CII toleriert keinerlei Abweichungen.
+    \item Einhaltung der Elementreihenfolge - insbesondere CII toleriert keinerlei Abweichungen.
 \end{itemize}
 Ein Dokument, das diesen syntaktischen Vertrag verletzt, wird von konformen Empfangssystemen in aller Regel bereits beim Einlesen verworfen, ohne dass eine inhaltliche Prüfung auch nur beginnt.
 
@@ -231,7 +235,7 @@ Die automatische Verarbeitung von Rechnungen ist ein altbekanntes Problem. Früh
 \label{sec:pdf_extraction}
 
 \subsection{Die Natur des PDF-Formats}
-PDFs sind keine Textdokumente mit Layoutinformationen \textemdash{} sie sind Renderinganweisungen, die zufällig auch Text enthalten können. Das Format speichert primär geometrische Befehle vom Typ ,,Zeichne Glyphe A an Koordinate (100,\,200) in Schrift Helvetica 12\,pt``. Ob dieses A zum Wort ,,Rechnungsnummer`` gehört, ob dieses Wort eine Tabellenüberschrift ist oder ob die nachfolgende Zahl einen Netto- oder Bruttobetrag darstellt \textemdash{} all das ist im PDF-Stream nicht kodiert und muss von Extraktionssoftware heuristisch erschlossen werden.
+PDFs sind keine Textdokumente mit Layoutinformationen - sie sind Renderinganweisungen, die zufällig auch Text enthalten können. Das Format speichert primär geometrische Befehle vom Typ ,,Zeichne Glyphe A an Koordinate (100,\,200) in Schrift Helvetica 12\,pt``. Ob dieses A zum Wort ,,Rechnungsnummer`` gehört, ob dieses Wort eine Tabelüberschrift ist oder ob die nachfolgende Zahl einen Netto- oder Bruttobetrag darstellt - all das ist im PDF-Stream nicht kodiert und muss von Extraktionssoftware heuristisch erschlossen werden.
 
 Für die Textextraktion ergeben sich daraus massive Probleme:
 \begin{itemize}
@@ -247,14 +251,14 @@ Besonders schwierig sind dabei Tabellen: Die Linien einer Tabelle im PDF sind nu
 \section{OCR mit Tesseract}
 \label{sec:ocr}
 
-Liegt eine Rechnung nicht als nativ-digitales PDF vor \textemdash{} sei es als Scan einer physischen Vorlage oder als fotografische Aufnahme \textemdash{} liefert jede koordinatenbasierte Textextraktion ein leeres Ergebnis. Der Inhalt existiert in diesen Fällen ausschließlich als Pixelmuster, das erst durch Optical Character Recognition (OCR) in maschinenlesbaren Text überführt werden muss.
+Liegt eine Rechnung nicht als nativ-digitales PDF vor - sei es als Scan einer physischen Vorlage oder als fotografische Aufnahme - liefert jede koordinatenbasierte Textextraktion ein leeres Ergebnis. Der Inhalt existiert in diesen Fällen ausschließlich als Pixelmuster, das erst durch Optical Character Recognition (OCR) in maschinenlesbaren Text überführt werden muss.
 
 \subsection{Funktionsweise von Tesseract}
 Als OCR-Engine wird \textit{Tesseract} verwendet, ein Open-Source-Projekt das ursprünglich von HP entwickelt wurde und heute von Google weiterentwickelt wird. Ab Version 4.0 basiert Tesseract auf LSTM-Netzen (Long Short-Term Memory), einer Art neuronalem Netz das gut mit sequenziellen Daten wie Text umgehen kann. Dadurch erkennt es Buchstaben deutlich zuverlässiger als ältere regelbasierte Methoden.
 Die Verarbeitung läuft grob in vier Schritten ab:
 \begin{enumerate}
     \item \textbf{Layout-Analyse}: Identifikation von Textregionen, Spalten und Zeilen im Bild.
-    \item \textbf{Baseline-Fitting}: Erkennen der Grundlinie jeder Textzeile \textemdash{} wichtig damit Buchstaben richtig segmentiert werden können, auch wenn der Scan leicht schief ist.
+    \item \textbf{Baseline-Fitting}: Erkennen der Grundlinie jeder Textzeile - wichtig damit Buchstaben richtig segmentiert werden können, auch wenn der Scan leicht schief ist.
     \item \textbf{Zeichenerkennung}: Das LSTM-Netz analysiert kleine Bildausschnitte und ordnet ihnen Buchstaben mit einem Konfidenzwert zu.
     \item \textbf{Worterkennung}: Wörterbücher helfen dabei, dass die erkannten Zeichenfolgen auch sinnvolle Wörter ergeben.
 \end{enumerate}
@@ -275,7 +279,7 @@ Der größte Unterschied zu älteren Ansätzen ist, dass kein Entwickler mehr f�
 
 \subsection{Architektur und Funktionsweise}
 Moderne LLMs basieren auf der Transformer-Architektur und verwenden Attention-Mechanismen, um Zusammenhänge zwischen verschiedenen Teilen eines Textes zu erkennen. Wichtig für die Extraktion ist das sogenannte \textit{In-Context Learning}: Das Modell wurde zwar nie speziell auf Rechnungen trainiert, hat aber durch sein allgemeines Training gelernt, dass eine IBAN meistens bei Wörtern wie ,,Bankverbindung`` oder ,,Kontonummer`` steht.
-Außerdem kann das Modell Synonyme automatisch auflösen: Ob auf der Rechnung ,,Total``, ,,Zahlbetrag``, ,,Rechnungssumme`` oder ,,zu zahlender Betrag`` steht \textemdash{} das Modell erkennt in allen Fällen, dass dasselbe Feld \texttt{TotalAmount} gemeint ist.
+Außerdem kann das Modell Synonyme automatisch auflösen: Ob auf der Rechnung ,,Total``, ,,Zahlbetrag``, ,,Rechnungssumme`` oder ,,zu zahlender Betrag`` steht - das Modell erkennt in allen Fällen, dass dasselbe Feld \texttt{TotalAmount} gemeint ist.
 
 \subsection{Modell-Vergleich und Evaluation}
 Im Rahmen der Entwicklung wurden verschiedene Modelle evaluiert (siehe Projektdokumentation):
@@ -286,7 +290,7 @@ Im Rahmen der Entwicklung wurden verschiedene Modelle evaluiert (siehe Projektdo
 \end{itemize}
 
 \subsection{Risiken: Halluzinationen}
-Das größte Problem bei LLMs ist die Halluzination. LLMs sind so trainiert, dass sie immer eine möglichst sinnvolle Antwort generieren. Wenn auf einer Rechnung zum Beispiel kein Lieferdatum steht, das JSON-Schema aber eines erwartet, dann erfindet das Modell einfach ein Datum \textemdash{} meistens das Rechnungsdatum.
+Das größte Problem bei LLMs ist die Halluzination. LLMs sind so trainiert, dass sie immer eine möglichst sinnvolle Antwort generieren. Wenn auf einer Rechnung zum Beispiel kein Lieferdatum steht, das JSON-Schema aber eines erwartet, dann erfindet das Modell einfach ein Datum - meistens das Rechnungsdatum.
 Für eine Finanzanwendung ist das ein ernstes Problem, weil ein erfundenes Lieferdatum in einer archivierten Rechnung steuerrechtliche Folgen haben kann. Der Prompt muss deshalb das Modell klar anweisen, in solchen Fällen \texttt{null} zurückzugeben statt zu raten.
 
 \section{Prompt-Design für deterministische Ausgabe}
@@ -329,12 +333,12 @@ Ein Beispiel für ein solches JSON-Schema, wie es im \textit{SmartBillConverter}
 }
 \end{lstlisting}
 
-Ein konkretes Problem war, dass dasselbe Modell beim gleichen Prompt manchmal unterschiedliche Ergebnisse geliefert hat \textemdash{} zum Beispiel Daten mal im Format YYYY-MM-DD und mal als DD.MM.YYYY. Das lässt sich durch genaue Formatierungsanweisungen im Prompt (,,Alle Daten im Format YYYY-MM-DD``) und die Einstellung Temperature\,=\,0 beheben, weil das Modell dann immer den wahrscheinlichsten Wert auswählt und die Ausgabe stabiler wird.
+Ein konkretes Problem war, dass dasselbe Modell beim gleichen Prompt manchmal unterschiedliche Ergebnisse geliefert hat - zum Beispiel Daten mal im Format YYYY-MM-DD und mal als DD.MM.YYYY. Das lässt sich durch genaue Formatierungsanweisungen im Prompt (,,Alle Daten im Format YYYY-MM-DD``) und die Einstellung Temperature\,=\,0 beheben, weil das Modell dann immer den wahrscheinlichsten Wert auswählt und die Ausgabe stabiler wird.
 
 \section{Datenschutz und Sicherheit in KI-APIs}
 \label{sec:ai_security}
 
-Rechnungen enthalten viele sensible Informationen: personenbezogene Daten wie Namen, Adressen und UID-Nummern, aber auch Geschäftsinterna wie Preise, Lieferanten und Projektbezeichnungen. Wenn diese Daten an eine Cloud-KI-API geschickt werden, verlassen sie die eigene Infrastruktur \textemdash{} was aus Datenschutzsicht problematisch ist.
+Rechnungen enthalten viele sensible Informationen: personenbezogene Daten wie Namen, Adressen und UID-Nummern, aber auch Geschäftsinterna wie Preise, Lieferanten und Projektbezeichnungen. Wenn diese Daten an eine Cloud-KI-API geschickt werden, verlassen sie die eigene Infrastruktur - was aus Datenschutzsicht problematisch ist.
 
 \subsection{Risikoanalyse}
 \begin{itemize}

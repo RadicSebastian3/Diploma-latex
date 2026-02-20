@@ -77,7 +77,7 @@ public class AddressType
 }
 \end{lstlisting}
 
-Aus \texttt{InvoiceData.BillerName} und \texttt{BillerStreet} etc.\ werden die entsprechenden Felder in \texttt{BillerType.Address} befüllt. Das Mapping ist dabei direkt und ohne Logik — ein Feld geht in das andere.
+Aus \texttt{InvoiceData.BillerName} und \texttt{BillerStreet} etc.\ werden die entsprechenden Felder in \texttt{BillerType.Address} befüllt. Das Mapping ist dabei direkt und ohne Logik - ein Feld geht in das andere.
 
 \section{Serialisierung mit XmlSerializer}
 \label{sec:ebinterface_serialisierung}
@@ -144,9 +144,9 @@ private List<string> ValidateAgainstXsd(string xml, string xsdPath)
 \subsection{Typische Validierungsfehler}
 
 \begin{itemize}
-    \item \textbf{Fehlendes Pflichtfeld}: \texttt{Element 'Invoice' missing required child 'InvoiceNumber'} — passiert wenn das KI-Modell keine Rechnungsnummer im Text findet
-    \item \textbf{Falsches Datumsformat}: \texttt{Value '01.01.2024' is invalid according to datatype 'date'} — das deutsche Datumsformat muss erst in ISO-Format konvertiert werden
-    \item \textbf{Ungültiger Währungscode}: \texttt{Value 'Euro' is not valid for attribute 'InvoiceCurrency'} — nur dreistellige ISO-4217-Codes wie \texttt{EUR} sind erlaubt
+    \item \textbf{Fehlendes Pflichtfeld}: \texttt{Element 'Invoice' missing required child 'InvoiceNumber'} - passiert wenn das KI-Modell keine Rechnungsnummer im Text findet
+    \item \textbf{Falsches Datumsformat}: \texttt{Value '01.01.2024' is invalid according to datatype 'date'} - das deutsche Datumsformat muss erst in ISO-Format konvertiert werden
+    \item \textbf{Ungültiger Währungscode}: \texttt{Value 'Euro' is not valid for attribute 'InvoiceCurrency'} - nur dreistellige ISO-4217-Codes wie \texttt{EUR} sind erlaubt
 \end{itemize}
 
 \subsection{Korrekturstrategie bei Fehlern}

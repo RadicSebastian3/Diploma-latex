@@ -9,7 +9,7 @@ Wenn eine Rechnung als Scan oder Foto vorliegt, gibt es keinen digitalen Text de
 
 \subsection{OcrExtractionService: Setup und Abhängigkeiten}
 
-Tesseract braucht sogenannte \textit{Traineddata}-Dateien — das sind die Sprachmodelle mit denen das Programm Buchstaben erkennt. Sie sind nicht im NuGet-Package enthalten und müssen separat heruntergeladen werden:
+Tesseract braucht sogenannte \textit{Traineddata}-Dateien - das sind die Sprachmodelle mit denen das Programm Buchstaben erkennt. Sie sind nicht im NuGet-Package enthalten und müssen separat heruntergeladen werden:
 
 \begin{lstlisting}[language={[Sharp]C}, caption={OcrExtractionService Constructor}, label={lst:ocr_constructor}]
 public class OcrExtractionService : IOcrExtractionService
@@ -73,7 +73,7 @@ Tesseract.NET braucht einen echten Dateipfad, daher muss der Stream zuerst in ei
 
 Was die Parameter bedeuten:
 \begin{itemize}
-    \item \texttt{deu+eng}: Beide Sprachdateien gleichzeitig aktiv — das hilft bei Rechnungen mit gemischtem Deutsch/Englisch.
+    \item \texttt{deu+eng}: Beide Sprachdateien gleichzeitig aktiv - das hilft bei Rechnungen mit gemischtem Deutsch/Englisch.
     \item \texttt{EngineMode.Default}: Nutzt das neuere LSTM-Netz aus Tesseract 4.0, das deutlich besser ist als die alte Methode.
     \item \texttt{tessedit\_char\_whitelist}: Schränkt die erlaubten Zeichen ein, damit Bildartefakte nicht als Sonderzeichen erkannt werden.
     \item \texttt{preserve\_interword\_spaces}: Mehrfache Leerzeichen bleiben erhalten, was für Tabellenspalten wichtig ist.

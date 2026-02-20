@@ -70,7 +70,7 @@ public async Task<IActionResult> UploadPdf(IFormFile file)
 
 Die Prüfung läuft in drei Schritten: Erst wird geschaut ob eine Datei vorhanden ist, dann ob es wirklich ein PDF ist, und zuletzt ob die Datei nicht größer als 10\,MB ist. Das Limit ist wichtig damit der Server bei sehr großen Dateien nicht zu viel Speicher braucht. \texttt{IFormFile} ist die ASP.NET-Klasse für hochgeladene Dateien.
 
-Die eigentliche Arbeit macht \texttt{ProcessInvoiceAsync} im \texttt{IInvoiceService}: PDF-Text extrahieren, KI aufrufen, Daten speichern. Der Controller selbst macht nur das Nötigste — die HTTP-Anfrage prüfen und das Ergebnis zurückschicken.
+Die eigentliche Arbeit macht \texttt{ProcessInvoiceAsync} im \texttt{IInvoiceService}: PDF-Text extrahieren, KI aufrufen, Daten speichern. Der Controller selbst macht nur das Nötigste - die HTTP-Anfrage prüfen und das Ergebnis zurückschicken.
 
 \subsection{InvoiceController: CRUD-Operationen}
 \label{subsec:invoice_controller}
@@ -111,7 +111,7 @@ public class InvoiceController : ControllerBase
 }
 \end{lstlisting}
 
-Das \texttt{[FromQuery]}-Attribut liest URL-Parameter automatisch aus. Beispiel: \texttt{GET /api/Invoice/search?year=2024} wird zu \texttt{Search(null, 2024)}. Das Repository-Pattern verbirgt die Datenbankzugriffe hinter einer Schnittstelle, was das Testen mit Mock-Objekten einfach macht.\footnote{Vgl. Fowler, Martin: \textit{Patterns of Enterprise Application Architecture -- Repository}, \url{https://martinfowler.com/eaaCatalog/repository.html}, letzter Zugriff am 06.01.2026}
+Das \texttt{[FromQuery]}-Attribut liest URL-Parameter automatisch aus. Beispiel: \texttt{GET /api/Invoice/}\allowbreak\texttt{search?year=2024} wird zu \texttt{Search(null, 2024)}. Das Repository-Pattern verbirgt die Datenbankzugriffe hinter einer Schnittstelle, was das Testen mit Mock-Objekten einfach macht.\footnote{Vgl. Fowler, Martin: \textit{Patterns of Enterprise Application Architecture - Repository}, \url{https://martinfowler.com/eaaCatalog/repository.html}, letzter Zugriff am 06.01.2026}
 
 \subsection{ZugferdController: Hybrides PDF/XML-Format}
 \label{subsec:zugferd_controller}
@@ -229,7 +229,7 @@ public interface ILlmConversionService
 }
 \end{lstlisting}
 
-Weil alle Services über Interfaces angesprochen werden, kann man die konkrete Implementierung jederzeit austauschen — zum Beispiel von Gemini auf GPT-4 wechseln — ohne den Controller ändern zu müssen. Das ist auch für Tests nützlich, weil man Interfaces durch einfache Mock-Objekte ersetzen kann.
+Weil alle Services über Interfaces angesprochen werden, kann man die konkrete Implementierung jederzeit austauschen - zum Beispiel von Gemini auf GPT-4 wechseln - ohne den Controller ändern zu müssen. Das ist auch für Tests nützlich, weil man Interfaces durch einfache Mock-Objekte ersetzen kann.
 
 \subsection{Service-Registrierung in Program.cs}
 Die Services werden im Dependency Injection Container registriert:
@@ -370,7 +370,7 @@ public class Invoice
 }
 \end{lstlisting}
 
-Properties mit \texttt{[NotMapped]} werden nicht in der Datenbank angelegt — sie sind nur im C\#-Objekt vorhanden, damit sie in der API-Antwort mitgeschickt werden können.
+Properties mit \texttt{[NotMapped]} werden nicht in der Datenbank angelegt - sie sind nur im C\#-Objekt vorhanden, damit sie in der API-Antwort mitgeschickt werden können.
 
 \section{Konfiguration und Secrets Management}
 \label{sec:configuration}
