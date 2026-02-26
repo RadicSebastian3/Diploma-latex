@@ -2,10 +2,48 @@
 \chapter{Schlussbetrachtung}
 \label{chap:schlussbetrachtung}
 
-\textit{[Dieses Kapitel wird gemeinsam verfasst.]}
-
 \section{Zusammenfassung der Ergebnisse und Beiträge}
-\textit{[Gemeinsam]}
+Das Ziel dieser Diplomarbeit war die Entwicklung eines Systems, das eingehende
+Rechnungen -- egal ob als PDF oder als Bild -- automatisch in maschinenlesbare
+XML-Formate umwandelt. Dieser Prototyp liegt jetzt vor, und er funktioniert.
+
+Alle zehn Testrechnungen, die die PROGRAMMIERFABRIK GmbH für die Abnahme
+bereitgestellt hat, wurden vom \textit{SmartBillConverter} vollständig verarbeitet.
+Die generierten XML-Ausgaben haben sowohl den offiziellen ebInterface-Validator
+der AUSTRIAPRO als auch den deutschen E-Rechnungs-Validator für ZUGFeRD~2.3
+fehlerfrei bestanden. Das war das definierte Erfolgskriterium -- und es wurde erreicht.
+
+Technisch setzt das System auf eine durchgängige Verarbeitungspipeline:
+Textextraktion aus PDF (PdfPig) oder Bild (Tesseract~OCR), anschließende
+Normalisierung durch die Google Gemini~API in eine strukturierte
+\texttt{InvoiceData}-Darstellung und abschließende XML-Generierung im
+jeweiligen Zielformat. Das Angular-Frontend bietet eine einfach bedienbare
+Oberfläche, die den gesamten Ablauf abbildet -- vom Upload bis zum Download
+des fertigen~XMLs.
+
+Sebastian Radić hat das Backend entworfen und implementiert: die gesamte
+Verarbeitungspipeline, die Service- und Repository-Schicht, die Datenbankanbindung
+über Entity Framework Core mit PostgreSQL sowie die theoretischen Grundlagen
+zu den E-Rechnungsstandards. Luis Schörgendorfer hat das Frontend entwickelt:
+Anforderungsanalyse, Angular-Architektur, alle UI-Komponenten, die Backend-Anbindung
+und die Evaluation der fertigen Anwendung. Die gemeinsamen Kapitel -- Einleitung,
+Gesamtarchitektur, Technologiestack und Schlussbetrachtung -- wurden von
+beiden Autoren erarbeitet.
 
 \section{Ausblick und Übertragbarkeit}
-\textit{[Gemeinsam]}
+Der \textit{SmartBillConverter} wurde als internes Tool der PROGRAMMIERFABRIK GmbH
+entwickelt, aber der zugrundeliegende Ansatz ist nicht unternehmensspezifisch.
+Die Pipeline aus OCR, KI-Normalisierung und schema-gesteuerter XML-Generierung
+lässt sich auf jedes strukturierte Dokumentformat übertragen, bei dem aus
+unstrukturierten Eingaben ein definiertes Ausgabeformat entstehen soll.
+
+Die praktische Erfahrung zeigt, dass Sprachmodelle gut darin sind, inhaltliche
+Zusammenhänge in Freitext zu erkennen und in strukturierte Daten zu überführen --
+auch dann, wenn das Eingabedokument keinerlei einheitliches Layout hat.
+Gleichzeitig bleibt das Ergebnis fehleranfällig genug, dass eine manuelle
+Überprüfung sinnvoll bleibt. Der Mensch bleibt vorerst im Loop.
+
+Mit den Erweiterungen, die im vorangegangenen Kapitel beschrieben wurden --
+lokales KI-Modell, weitere Standards, Batch-Import und Feedback-Loop --
+könnte aus dem Prototyp ein ernsthafter Produktivbetriebskandidat werden.
+Die Grundlage dafür ist gelegt.

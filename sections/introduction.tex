@@ -1,17 +1,136 @@
+\setauthor{Sebastian Radić \& Luis Schörgendorfer}
+
 \section{Ausgangssituation und Motivation}
-\textit{[Wird gemeinsam verfasst]}
+Die PROGRAMMIERFABRIK GmbH verarbeitet im Tagesgeschäft regelmäßig eingehende Rechnungen.
+Bislang geschah das manuell: Rechnungsdaten wurden von Hand in das interne System eingetippt,
+was zeitaufwendig und fehleranfällig war. Mit wachsendem Rechnungsvolumen wurde klar,
+dass dieser Prozess langfristig nicht skalierbar ist.
+
+Gleichzeitig ist die elektronische Rechnungsverarbeitung kein rein betriebsinternes Thema mehr.
+Die europäische Richtlinie\footnote{Vgl. Europäisches Parlament und Rat der EU: \textit{Richtlinie 2014/55/EU über die elektronische Rechnungsstellung bei öffentlichen Aufträgen}, \url{https://eur-lex.europa.eu/legal-content/DE/TXT/?uri=CELEX:32014L0055}, letzter Zugriff am 20.01.2026}
+2014/55/EU verpflichtet öffentliche Auftraggeber zur Annahme elektronischer Rechnungen,
+und in Österreich gilt seit 2014 die verpflichtende elektronische Rechnungslegung gegenüber
+Bundesbehörden über das Unternehmensserviceportal (USP) im Format ebInterface.\footnote{Vgl. AUSTRIAPRO: \textit{ebInterface -- Der österreichische Standard für die elektronische Rechnung}, \url{https://www.ebinterface.at/}, letzter Zugriff am 20.01.2026}
+Diese regulatorischen Vorgaben verstärken den Druck auf Unternehmen, ihre Rechnungsverarbeitung
+zu automatisieren.
+
+Der \textit{SmartBillConverter} ist die Antwort auf genau diese Kombination aus betrieblichem
+Aufwand und gesetzlichem Druck. Das System nimmt eine eingehende Rechnung als PDF oder Bild
+entgegen, extrahiert den Inhalt automatisch und liefert am Ende ein valides XML im Format
+ebInterface~6.1 oder ZUGFeRD~2.3 zurück.
 
 \section{Problemstellung und Rahmenbedingungen}
-\textit{[Wird gemeinsam verfasst]}
+Das zentrale Problem ist, dass Rechnungen, die von Lieferanten einlangen, kein einheitliches
+Format haben. Ein digital verschicktes PDF ist für einen Menschen gut lesbar, für Software aber
+oft nur ein Bild ohne strukturierten Inhalt. Handelt es sich gar um einen Scan oder ein Foto
+einer Papierrechnung, ist der Informationsgehalt für eine Maschine erst recht nicht direkt
+zugänglich.
+
+Hinzu kommt die Heterogenität der Zielformate: Die PROGRAMMIERFABRIK GmbH benötigt Ausgaben in
+ebInterface~6.1, dem österreichischen XML-Standard für den öffentlichen Bereich, und in
+ZUGFeRD~2.3, dem deutschen Hybridformat, das ein PDF mit eingebettetem XML kombiniert.
+Beide Formate unterliegen festen XML-Schemata (XSD), die für ein valides Dokument exakt
+eingehalten werden müssen.
+
+Die technischen Rahmenbedingungen sehen vor, dass das System als interne Webanwendung betrieben
+wird. Ein Cloud-Deployment war nicht vorgesehen; der Betrieb läuft lokal über Docker.
+Als KI-Backend kommt die externe Gemini~API (Google) zum Einsatz, die den rohen Rechnungstext
+in strukturierte Daten überführt.
 
 \section{Zielsetzung und Erfolgskriterien}
-\textit{[Wird gemeinsam verfasst]}
+Ziel dieser Diplomarbeit war die Entwicklung eines funktionsfähigen Prototyps, der den
+beschriebenen Verarbeitungsprozess vollständig abbildet. Konkret sollte das System in der
+Lage sein:
+
+\begin{enumerate}
+    \item eine PDF-Rechnung hochzuladen und als valides ebInterface~6.1~XML auszugeben,
+    \item ein Bild einer Rechnung per OCR zu verarbeiten und als valides ZUGFeRD~2.3~XML auszugeben,
+    \item bereits verarbeitete Rechnungen persistent zu speichern und erneut herunterladen zu können.
+\end{enumerate}
+
+Als messbares Erfolgskriterium wurde definiert, dass die generierten XML-Dateien die offiziellen
+Validatoren bestehen müssen: das ebInterface-Validierungsportal der AUSTRIAPRO\footnote{AUSTRIAPRO: \textit{ebInterface Validierungsportal}, \url{https://labs.ebinterface.at/}, letzter Zugriff am 20.01.2026}
+und den deutschen E-Rechnungs-Validator für ZUGFeRD.\footnote{Vgl. Verein zur Förderung der Nutzung elektronischer Rechnungen e.V.: \textit{E-Rechnungs-Validator}, \url{https://erechnungs-validator.de/}, letzter Zugriff am 20.01.2026}
+
+Dieses Kriterium wurde erfüllt: Alle zehn Testrechnungen, die die PROGRAMMIERFABRIK GmbH
+zur Verfügung stellte, wurden vom System verarbeitet und lieferten XML-Ausgaben,
+die beide Validatoren fehlerfrei akzeptierten.
 
 \section{Umfang, Annahmen und Abgrenzungen}
-\textit{[Wird gemeinsam verfasst]}
+Der Umfang des Projekts umfasst folgende Komponenten:
+
+\begin{itemize}
+    \item \textbf{Backend}: RESTful Web API auf Basis von ASP.NET Core~9.0 mit
+    PDF-Textextraktion (PdfPig), OCR (Tesseract), KI-Normalisierung (Gemini~API)
+    und XML-Generierung für beide Zielformate.
+    \item \textbf{Frontend}: Angular Single-Page-Application mit Upload-Komponente,
+    Fortschrittsanzeige, Dokumentenvorschau und Download-Funktion.
+    \item \textbf{Datenhaltung}: PostgreSQL-Datenbank mit Entity Framework Core (Code-First)
+    zur persistenten Speicherung verarbeiteter Rechnungen.
+\end{itemize}
+
+Bewusst ausgeklammert wurden folgende Punkte:
+
+\begin{itemize}
+    \item \textbf{Produktionsreifes Cloud-Deployment}: Das System läuft lokal über Docker
+    und ist nicht für den Betrieb auf einem öffentlich erreichbaren Server ausgelegt.
+    \item \textbf{Weitere E-Rechnungsstandards} wie XRechnung oder Peppol~BIS,
+    da diese außerhalb des unmittelbaren Bedarfs der PROGRAMMIERFABRIK GmbH liegen.
+    \item \textbf{Benutzerverwaltung und Authentifizierung}, da es sich um ein rein
+    internes Tool handelt.
+    \item Weitere Features, die im Text explizit als \textit{nicht implementiert}
+    gekennzeichnet sind.
+\end{itemize}
+
+Als Annahmen gelten, dass Eingangsrechnungen in deutscher oder englischer Sprache vorliegen
+und die Gemini~API während des Betriebs erreichbar ist.
 
 \section{Beiträge (Team- und Individualleistungen)}
-\textit{[Wird gemeinsam verfasst]}
+Die Arbeit ist als Teamprojekt strukturiert. Gemeinsame Teile wie Einleitung,
+Gesamtarchitektur, Technologiestack und Schlussbetrachtung wurden von beiden Autoren
+gemeinsam erarbeitet. Die inhaltlichen Schwerpunkte sind dabei klar aufgeteilt.
+
+\textbf{Sebastian Radić} verantwortet den Backend-Teil des Projekts.
+Sein Beitrag umfasst die theoretischen Grundlagen zu E-Rechnungsstandards und Compliance
+(ebInterface~6.1, ZUGFeRD~2.3, EN~16931), die vollständige Backend-Implementierung
+(Controller, Services, Repository-Schicht, Datenbankzugriff) sowie die gesamte
+Verarbeitungspipeline von der PDF-Extraktion über OCR und KI-Normalisierung
+bis zur XML-Generierung.
+
+\textbf{Luis Schörgendorfer} verantwortet den Frontend-Teil des Projekts.
+Sein Beitrag umfasst die Anforderungsanalyse des Frontends, die Architektur- und
+Technologieentscheidungen der Angular-Anwendung, die Implementierung der Upload-Komponente,
+der UI/UX-Gestaltung und der Backend-Anbindung sowie die Optimierung der
+Frontend-Performance und die abschließende Evaluation der Anwendung.
 
 \section{Aufbau der Arbeit und Leseführung}
-\textit{[Wird gemeinsam verfasst]}
+Die Arbeit ist in sieben Teile gegliedert, die den Entwicklungsprozess von der
+theoretischen Grundlage bis zur abschließenden Bewertung nachvollziehbar machen.
+
+\textbf{Teil~I -- Theoretische Grundlagen} erklärt die beiden E-Rechnungsstandards
+ebInterface~6.1 und ZUGFeRD~2.3 sowie deren rechtlichen Rahmen.
+Wer die Standards bereits kennt, kann diesen Teil überspringen.
+
+\textbf{Teil~II -- Systemarchitektur und Design} beschreibt die Gesamtarchitektur
+des \textit{SmartBillConverter}, den Datenfluss durch das System und die Auswahl
+des Technologiestacks. Dieser Teil ist die Grundlage für alle folgenden
+Implementierungskapitel.
+
+\textbf{Teil~III -- Implementierung (Backend)} geht tief in den Code:
+Backend-Struktur, Controller, PDF-Extraktion, OCR-Pipeline, KI-Normalisierung
+und die Generierung beider XML-Formate werden Schritt für Schritt erklärt.
+
+\textbf{Teil~IV -- Frontend-Anforderungsanalyse und Architektur} dokumentiert,
+welche Anforderungen das Frontend erfüllen muss, wie das Datenmodell aussieht
+und welche Technologieentscheidungen getroffen wurden.
+
+\textbf{Teil~V -- Implementierung (Frontend \& Backend-Refinement)} zeigt die
+konkrete Umsetzung der Angular-Komponenten, der UI/UX-Gestaltung und der
+Anbindung ans Backend.
+
+\textbf{Teil~VI -- Optimierung und Ergebnisse (Frontend)} bewertet die Performance
+der Anwendung und fasst die Ergebnisse der Frontend-Evaluation zusammen.
+
+\textbf{Teil~VII -- Ergebnisse, Diskussion und Ausblick} benennt die bekannten
+Schwächen des Systems, diskutiert mögliche Erweiterungen und zieht ein
+abschließendes Fazit.

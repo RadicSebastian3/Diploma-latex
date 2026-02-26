@@ -2,10 +2,74 @@
 \chapter{Grenzen und zukünftige Arbeiten}
 \label{chap:grenzen_zukunft}
 
-\textit{[Dieses Kapitel wird gemeinsam verfasst.]}
-
 \section{Bekannte Einschränkungen}
-\textit{[Frontend \& Backend]}
+Der \textit{SmartBillConverter} funktioniert -- das belegen die validierten Testergebnisse.
+Trotzdem gibt es Grenzen, die im Rahmen dieser Diplomarbeit nicht überwunden wurden
+und die beim produktiven Einsatz bekannt sein sollten.
+
+\textbf{OCR-Qualität bei schlechten Vorlagen.}
+Die OCR-Pipeline funktioniert gut bei sauber gescannten oder fotografierten Rechnungen.
+Bei handgeschriebenen Rechnungen, stark verzerrten Bildern oder sehr niedrig aufgelösten
+Scans nimmt die Erkennungsqualität deutlich ab. Tesseract liefert in diesen Fällen
+fehlerhafte Texte, die auch durch die KI-Normalisierung nur bedingt korrigiert werden
+können, da die Eingabegrundlage für das Sprachmodell schlicht zu schlecht ist.
+
+\textbf{Abhängigkeit von der externen Gemini~API.}
+Die KI-Normalisierung setzt voraus, dass die Google Gemini~API erreichbar ist.
+Das bedeutet, dass das System ohne Internetverbindung nicht funktioniert.
+Wichtiger noch: Rechnungsdaten werden an einen externen Dienst übertragen,
+was je nach Unternehmensrichtlinien datenschutzrechtlich problematisch sein kann.
+Im Rahmen dieser Arbeit wurde das als vertretbar eingestuft, da der Einsatz
+rein intern ist. Für einen breiteren Betrieb wäre das neu zu bewerten.
+
+\textbf{Kein produktionsreifes Deployment.}
+Das System läuft über eine lokale Docker-Umgebung. Es gibt keine Absicherung
+für den Betrieb auf einem öffentlich erreichbaren Server: kein HTTPS-Termination,
+keine Secrets-Verwaltung, kein Monitoring. Das war bewusst außerhalb des
+Projektscopes, schränkt aber die unmittelbare Einsetzbarkeit ein.
+
+\textbf{Begrenzte Standardunterstützung.}
+Das System unterstützt ausschließlich ebInterface~6.1 und ZUGFeRD~2.3,
+da das die beiden Formate sind, die die PROGRAMMIERFABRIK GmbH benötigt.
+Weitere in Europa gebräuchliche Standards -- etwa XRechnung (Deutschland)
+oder Peppol~BIS -- sind nicht implementiert.
+
+\textbf{KI-generiertes XML erfordert manuelle Überprüfung.}
+Auch wenn alle Testrechnungen die offiziellen Validatoren bestanden haben,
+bedeutet eine erfolgreiche XSD-Validierung nicht automatisch, dass die Inhalte
+semantisch korrekt sind. Kleine Fehler -- ein falscher Betrag, ein nicht
+erkannter Empfängername -- können auftreten und müssen vom Benutzer vor der
+Weiterverwendung geprüft werden.
 
 \section{Zukünftige Erweiterungen}
-\textit{[UI/UX, weitere Standards]}
+Der \textit{SmartBillConverter} ist als Prototyp konzipiert, hat aber eine klare
+Basis, auf der weitergebaut werden kann.
+
+\textbf{Weitere E-Rechnungsstandards.}
+Die Verarbeitungspipeline ist generisch aufgebaut: Textextraktion,
+KI-Normalisierung und XML-Generierung sind voneinander entkoppelt.
+Das Hinzufügen eines neuen Zielformats bedeutet im Wesentlichen,
+einen neuen \texttt{XmlService} zu implementieren und das entsprechende
+Schema zu kennen. XRechnung (basierend auf UBL und CII) und Peppol~BIS
+wären naheliegende nächste Schritte, besonders wenn das Tool auch für
+den deutschen Markt relevant werden soll.
+
+\textbf{Lokales KI-Modell (On-Premise).}
+Die Abhängigkeit von der Gemini~API ließe sich durch ein lokal betriebenes
+Sprachmodell lösen. Modelle wie LLaMA oder Mistral, die über Ollama lokal
+ausgeführt werden können, wären ein möglicher Ersatz.\footnote{Vgl. Meta AI: \textit{Llama -- Open Foundation and Fine-Tuned Chat Models}, \url{https://llama.meta.com/}, letzter Zugriff am 20.01.2026}
+Das würde Datenschutzbedenken entschärfen und den Offline-Betrieb ermöglichen,
+geht aber mit höheren Hardware-Anforderungen einher.
+
+\textbf{Batch-Verarbeitung und automatischer Import.}
+Derzeit müssen Rechnungen manuell über das Frontend hochgeladen werden.
+Eine automatische Verarbeitung -- zum Beispiel durch Überwachung eines lokalen
+Ordners oder eines E-Mail-Postfachs -- würde den manuellen Aufwand weiter
+reduzieren und den praktischen Nutzen für den Tagesbetrieb deutlich erhöhen.
+
+\textbf{Feedback-Loop und aktives Lernen.}
+Wenn ein Benutzer einen KI-Fehler im generierten XML korrigiert, könnte
+diese Korrektur als Trainingsdatum verwendet werden, um das System über
+die Zeit zu verbessern. Ein einfacher Ansatz wäre, korrigierte Rechnungspaare
+(Rohtext +\ korrektes JSON) zu sammeln und für Few-Shot-Prompting oder
+Fine-Tuning zu nutzen.
