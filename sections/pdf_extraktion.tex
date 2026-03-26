@@ -173,7 +173,9 @@ if (string.IsNullOrWhiteSpace(result) ||
 }
 \end{lstlisting}
 
-Die Prüfung schaut auf drei Dinge: komplett leer, nur Fehlermeldungen, oder nach dem Herausrechnen der Seitentrennzeilen weniger als 50 Zeichen. Trifft eines zu, wird ein Demo-Text angehängt damit das KI-Modell trotzdem etwas verarbeiten kann.
+Die Prüfung schaut auf drei Dinge: komplett leer, nur Fehlermeldungen, oder nach dem Herausrechnen der Seitentrennzeilen weniger als 50 Zeichen. Trifft eines davon zu, wird in der aktuellen Projektversion ein kurzer Platzhaltertext angehängt. Dieser Platzhalter dient ausschließlich dazu, die nachfolgenden Verarbeitungsschritte der Pipeline (Normalisierung und XML-Erzeugung) im Test reproduzierbar ausführen zu können.
+
+In einer Produktivumgebung ist so ein Platzhaltertext nicht sinnvoll, weil er eine leere oder unlesbare Rechnung verschleiert. Sinnvoller wäre hier eine klare Rückmeldung an den Benutzer (z.B. "Kein lesbarer Text erkannt") und anschließend ein automatischer OCR-Fallback (siehe nächster Abschnitt) oder ein Abbruch mit Hinweis auf eine bessere Eingabedatei.
 
 \subsection{Entscheidungslogik: PDF vs.\ OCR}
 
@@ -204,7 +206,7 @@ Die PdfPig-Integration funktioniert gut für typische einspaltige Rechnungen. Es
 
 Wenn ein PDF kein Text-Overlay hat, gibt PdfPig eine leere Liste zurück. Der Benutzer bekommt keine direkte Fehlermeldung, sondern das Fallback-System greift ein. Im echten Produktionseinsatz wäre hier ein automatischer OCR-Fallback sinnvoll:
 
-\begin{lstlisting}[language={[Sharp]C}, caption={OCR-Fallback fuer gescannte PDFs (Konzept)}, label={lst:ocr_fallback}]
+\begin{lstlisting}[language={[Sharp]C}, caption={OCR-Fallback für gescannte PDFs (Konzept)}, label={lst:ocr_fallback}]
 if (extractedText.Length < 100)
 {
     pdfStream.Position = 0;
@@ -213,7 +215,7 @@ if (extractedText.Length < 100)
     foreach (var image in images)
         ocrTexts.Add(await _ocrService.ExtractTextFromImageAsync(
             image.Stream, $"page{image.PageNumber}.png"));
-    extractedText = string.Join("\n--- Naechste Seite ---\n", ocrTexts);
+    extractedText = string.Join("\n--- Nächste Seite ---\n", ocrTexts);
 }
 \end{lstlisting}
 

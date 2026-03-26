@@ -16,7 +16,7 @@ In the second stage, the extracted text is forwarded to the Gemini~2.5~Flash API
 In the third stage, separate mapper classes transform the internal data model into the respective target XML format and validate the output against both the XSD schema and the EN~16931 Schematron business rules.
 
 The backend is implemented in ASP.NET Core~9.0, the frontend is a single-page application built with Angular, data is persisted in PostgreSQL via Entity Framework Core, and the entire stack is containerised with Docker~Compose.
-All ten test invoices successfully passed the official AUSTRIAPRO ebInterface validator and the German \textit{E-Rechnungs-Validator}, confirming that the defined acceptance criterion was fully met.
+All ten test invoices passed the official AUSTRIAPRO ebInterface validator and the German \textit{E-Rechnungs-Validator}. A short anonymised characterisation of the test set is provided in the appendix (Table \ref{tab:testrechnungen}).
 
 \newpage
 \begin{spacing}{1}
@@ -37,4 +37,4 @@ In der zweiten Stufe wird der extrahierte Text an die Gemini~2.5~Flash API über
 In der dritten Stufe transformieren separate Mapper-Klassen das interne Datenmodell in das jeweilige Zielformat und validieren die Ausgabe gegen das XSD-Schema sowie die EN~16931 Schematron-Geschäftsregeln.
 
 Das Backend ist in ASP.NET Core~9.0 implementiert, das Frontend ist eine Single-Page-Application auf Basis von Angular, die Datenpersistenz erfolgt über PostgreSQL mit Entity Framework Core, und der gesamte Stack ist mit Docker~Compose containerisiert.
-Alle zehn Testrechnungen haben den offiziellen AUSTRIAPRO-ebInterface-Validator sowie den deutschen \textit{E-Rechnungs-Validator} erfolgreich bestanden und damit das definierte Erfüllungskriterium vollständig erfüllt.
+Alle zehn Testrechnungen wurden von den verwendeten Validatoren akzeptiert. Eine kurze, anonymisierte Charakterisierung des Testsets ist im Anhang enthalten (Tabelle \ref{tab:testrechnungen}).

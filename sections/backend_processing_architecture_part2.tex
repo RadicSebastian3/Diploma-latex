@@ -140,7 +140,7 @@ private string ExtractTextFromPage(Page page)
     {
         var wordY = Math.Round(word.BoundingBox.Bottom, 1);
         
-        // Pruefen ob neue Zeile
+        // Prüfen ob neue Zeile
         if (currentLineY.HasValue && 
             Math.Abs(wordY - currentLineY.Value) > lineHeightTolerance)
         {
@@ -219,12 +219,14 @@ if (string.IsNullOrWhiteSpace(result) ||
     result.Contains("[Keine lesbaren Textinhalte") ||
     result.Replace("---", "").Replace("Seite", "").Trim().Length < 50)
 {
-    _logger.LogWarning("Wenig oder kein Text extrahiert, fuege Demo-Text als Fallback hinzu");
+    _logger.LogWarning("Wenig oder kein Text extrahiert, füge Platzhaltertext (Testmodus) als Fallback hinzu");
     result += "\n\n" + GenerateFallbackDemoText();
 }
 \end{lstlisting}
 
-Die Prüfung schaut auf drei Dinge: Ist der Text komplett leer? Enthält er nur Fehlermeldungen? Oder sind nach dem Herausrechnen der Seiten-Überschriften weniger als 50 Zeichen übrig? Wenn das zutrifft, wird ein Demo-Text angehängt damit die KI trotzdem etwas zum Verarbeiten hat. Im echten Einsatz sollte hier stattdessen OCR gestartet werden.
+Die Prüfung schaut auf drei Dinge: Ist der Text komplett leer? Enthält er nur Fehlermeldungen? Oder sind nach dem Herausrechnen der Seiten-Überschriften weniger als 50 Zeichen übrig? Wenn das zutrifft, wird in der aktuellen Projektversion ein kurzer Platzhaltertext angehängt, damit die nachfolgenden Verarbeitungsschritte im Test nicht sofort abbrechen.
+
+Wichtig: In einer Produktivumgebung sollte dieser Platzhalter nicht verwendet werden. Stattdessen ist ein klarer Fehlerstatus im Frontend sinnvoll (damit der Benutzer weiß, dass die Datei unlesbar ist) und anschließend ein OCR-Fallback, falls die Eingabe ein gescanntes PDF war.
 
 \section{OCR-Pipeline mit Tesseract}
 \label{sec:ocr_implementation}
@@ -254,7 +256,7 @@ public class OcrExtractionService : IOcrExtractionService
         _tessDataPath = configuration.GetValue<string>("Tesseract:DataPath") 
             ?? Path.Combine(Directory.GetCurrentDirectory(), "tessdata");
         
-        // Pruefe ob tessdata Ordner existiert
+        // Prüfe ob tessdata Ordner existiert
         if (!Directory.Exists(_tessDataPath))
         {
             _logger.LogWarning(
@@ -334,10 +336,10 @@ public async Task<string> ExtractTextFromImageAsync(
             using var engine = new TesseractEngine(
                 _tessDataPath, "deu+eng", EngineMode.Default);
             
-            // OCR-Konfiguration fuer bessere Genauigkeit
+            // OCR-Konfiguration für bessere Genauigkeit
             engine.SetVariable("tessedit_char_whitelist", 
                 "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz" +
-                "aeoeuaeoeueAeOeUess.,:-+/()euro$GBP-YEN \n\r\t");
+                "aeoeuaeoeueAeOeUess.,:-+/()euro$£¥ \n\r\t");
             engine.SetVariable("preserve_interword_spaces", "1");
             
             // ... Verarbeitung folgt
@@ -460,7 +462,7 @@ Der Try-Catch-Block im Service fängt alle Exceptions und wrappt sie in eine \te
 \subsection{Tesseract Sprachmodelle und Download-Automatisierung}
 Die Tesseract-Modelle sind nicht im NuGet-Package enthalten. Das Projekt enthält ein PowerShell-Script für den Download:
 
-\begin{lstlisting}[language=bash, caption={download-tessdata.ps1 (Auszug)}, label={lst:tessdata_download}]
+\begin{lstlisting}[language=powershell, caption={download-tessdata.ps1 (Auszug)}, label={lst:tessdata_download}]
 # Tesseract Traineddata Download Script
 $tessDataPath = ".\tessdata"
 $baseUrl = "https://github.com/tesseract-ocr/tessdata/raw/main"
@@ -499,12 +501,12 @@ public async Task<Invoice> ProcessInvoiceAsync(Stream pdfStream, string fileName
         _logger.LogInformation("PDF-Datei erkannt, nutze PdfExtractionService");
         extractedText = await _pdfService.ExtractTextFromPdfAsync(pdfStream);
         
-        // Pruefe ob PDF-Extraktion erfolgreich war
+        // Prüfe ob PDF-Extraktion erfolgreich war
         if (string.IsNullOrWhiteSpace(extractedText) || extractedText.Length < 100)
         {
             _logger.LogWarning(
                 "PDF-Extraktion lieferte wenig Text, PDF ist vermutlich gescannt");
-            // Hier koennte OCR-Fallback getriggert werden
+            // Hier könnte OCR-Fallback getriggert werden
         }
     }
     else
@@ -524,7 +526,7 @@ Die Entscheidung läuft über die Dateiendung. Sicherer wäre es, die ersten Byt
 
 Ein häufiges Problem ist das \textit{gescannte PDF}: Eine Datei, die zwar als PDF vorliegt, aber nur ein eingescanntes Bild enthält ohne lesbaren Text. Die normale PDF-Extraktion gibt dann nur leere Strings zurück.Die Heuristik \texttt{Length < 100} erkennt dies und könnte einen OCR-Fallback triggern. Die Implementierung dafür ist:
 
-\begin{lstlisting}[language={[Sharp]C}, caption={OCR-Fallback fuer gescannte PDFs (Konzept)}, label={lst:ocr_fallback}]
+\begin{lstlisting}[language={[Sharp]C}, caption={OCR-Fallback für gescannte PDFs (Konzept)}, label={lst:ocr_fallback}]
 if (string.IsNullOrWhiteSpace(extractedText) || extractedText.Length < 100)
 {
     _logger.LogWarning("PDF scheint gescannt zu sein, versuche OCR");
@@ -542,7 +544,7 @@ if (string.IsNullOrWhiteSpace(extractedText) || extractedText.Length < 100)
         ocrTexts.Add(pageText);
     }
     
-    extractedText = string.Join("\n--- Naechste Seite ---\n", ocrTexts);
+    extractedText = string.Join("\n--- Nächste Seite ---\n", ocrTexts);
 }
 \end{lstlisting}
 

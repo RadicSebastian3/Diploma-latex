@@ -152,7 +152,19 @@
 {
 	\printglossary[title=Glossary,toctitle=Glossary] %,style=long]
 }
-\spacing{1}{
+\listoffigures
+\listoftables
+\lstlistoflistings
+
+\cleardoublepage
+\IfStrEq{\thesislang}{de}
+{
+	\renewcommand{\bibname}{Literaturverzeichnis}
+	\renewcommand{\refname}{Literaturverzeichnis}
+}
+{}
+\addcontentsline{toc}{chapter}{Literaturverzeichnis}
+\begin{spacing}{1}
 \IfStrEq{\thesislang}{de}
 {
 	\bibliographystyle{ieeetrande}
@@ -160,11 +172,9 @@
 {
 	\bibliographystyle{IEEEtran}
 }
+\nocite{*}
 \bibliography{bib}
-}
-\listoffigures
-\listoftables
-\lstlistoflistings
+\end{spacing}
 \appendix
 \addchap{Anhang}
 \input{./sections/appendix}

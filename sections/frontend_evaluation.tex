@@ -1,4 +1,4 @@
-\setauthor{Luis Schörgendorfer}
+﻿\setauthor{Luis Schörgendorfer}
 \chapter{Evaluation mit realen Rechnungen (Frontend-Sicht)}
 \label{chap:frontend_evaluation}
 
@@ -10,32 +10,13 @@ Die Fehlerbehandlung ist ein wichtiger Teil der Benutzeroberfläche. Wenn etwas 
 
 \subsection{Dateiformat-Validierung}
 
-Die erste Fehlerquelle ist das Hochladen falscher Dateiformate. Das System akzeptiert nur PDFs und gängige Bildformate (PNG, JPEG, BMP, TIFF, GIF). Wenn ein Benutzer versucht, eine andere Datei hochzuladen, wird sofort eine Fehlermeldung angezeigt:
-
-\begin{lstlisting}[language=TypeScript, caption={Fehlerbehandlung bei falschen Dateiformaten}]
-const supportedTypes = ['application/pdf', 'image/png', 
-                       'image/jpeg', 'image/bmp', 
-                       'image/tiff', 'image/gif'];
-if (!supportedTypes.includes(file.type)) {
-  this.showFileTypeError(file.name, file.type);
-  return;
-}
-\end{lstlisting}
+Die erste Fehlerquelle ist das Hochladen falscher Dateiformate. Das System akzeptiert nur PDFs und gängige Bildformate (PNG, JPEG, BMP, TIFF, GIF). Wird ein anderes Format ausgewählt, blockiert das Frontend den Upload sofort und zeigt eine klare Fehlermeldung.
 
 Die Fehlermeldung enthält den Dateinamen und den erkannten Dateityp. Das hilft dem Benutzer zu verstehen, warum die Datei abgelehnt wurde. Die Meldung verschwindet nach 5 Sekunden automatisch, kann aber auch manuell geschlossen werden.
 
 \subsection{Backend-Fehler}
 
-Wenn das Backend einen Fehler meldet (z.B. weil die Rechnung nicht lesbar ist oder wichtige Daten fehlen), wird die Fehlermeldung vom Backend direkt an den Benutzer weitergegeben:
-
-\begin{lstlisting}[language=TypeScript, caption={Anzeige von Backend-Fehlern}]
-error: (error) => {
-  fileItem.status = 'error';
-  fileItem.errorMessage = error.error?.error || 'Unbekannter Fehler';
-  this.errorMessage = `Fehler beim Hochladen: ${error.error?.error}`;
-  this.showError = true;
-}
-\end{lstlisting}
+Wenn das Backend einen Fehler meldet (z.B. weil die Rechnung nicht lesbar ist oder wichtige Daten fehlen), wird die Fehlermeldung im Frontend angezeigt. Dadurch sieht der Benutzer nicht nur, dass etwas fehlgeschlagen ist, sondern auch warum.
 
 Die Fehlermeldung wird sowohl in der Dateiliste als auch in einem großen Alert-Banner oben angezeigt. Das stellt sicher, dass der Benutzer den Fehler nicht übersieht.
 
@@ -59,7 +40,16 @@ Der typische Workflow besteht aus drei Schritten:
     \item \textbf{Konvertieren und Herunterladen}: Ein Klick auf "Konvertieren" startet die Verarbeitung. Die Progress Bars zeigen den Status jeder Datei. Nach erfolgreicher Konvertierung erscheint der Download-Button.
 \end{enumerate}
 
-Dieser Workflow ist selbsterklärend und benötigt keine Anleitung. Tests mit Benutzern zeigten, dass die meisten den Prozess ohne Hilfe durchführen konnten.
+Dieser Workflow ist absichtlich kurz gehalten, damit er ohne lange Einschulung funktioniert.
+
+\textbf{Usability-Check:} Es wurde ein kurzer, aufgabenbasierter Test durchgeführt. Insgesamt nahmen \textbf{[ZAHL EINTRAGEN]} Personen teil (interne Kurztests). Die Aufgaben waren: Format wählen, Dateien hochladen, Konvertierung starten, Ergebnis herunterladen und eine fehlerhafte Datei wieder entfernen. Das Vorgehen und die Beobachtungskriterien sind im Anhang zusammengefasst (siehe Abschnitt \ref{app:usability_test}).
+
+Als Ergebnis zeigte sich: Der Ablauf wurde in der Regel ohne Hilfe verstanden. Unklarheiten traten vor allem dann auf, wenn das Backend eine Fehlermeldung lieferte, die zwar korrekt war, aber ohne Kontext schwer einzuordnen ist (z.B. bei unlesbaren Scans). Hier hilft eine kurze Erklärung in der UI, was der Benutzer als nächstes tun kann.
+
+\subsection{Testrechnungen: Bandbreite}
+Für die Abnahme wurden zehn Testrechnungen verwendet. Die Originaldokumente sind aus Datenschutzgründen nicht im Text enthalten. Um dennoch nachvollziehbar zu machen, welche Bandbreite getestet wurde, werden die zehn Rechnungen im Anhang anonymisiert als TR01--TR10 charakterisiert (siehe Tabelle \ref{tab:testrechnungen}).
+
+In Summe reichten die Testfälle von einfachen, klar lesbaren Ein-Seiten-PDFs bis zu schwierigeren Eingaben (z.B. mehrseitige Dokumente oder Scans mit sehr wenig extrahierbarem Text). Dadurch wurde sowohl der Normalfall als auch typische Problemfälle der Praxis abgedeckt.
 
 \subsection{Verarbeitungsgeschwindigkeit}
 

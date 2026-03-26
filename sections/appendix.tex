@@ -1,0 +1,55 @@
+﻿
+\section{Testrechnungen (anonymisierte Charakterisierung)}
+\label{app:testrechnungen}
+
+Die Abnahmetests wurden mit zehn Rechnungen durchgeführt, die von der PROGRAMMIERFABRIK GmbH zur Verfügung gestellt wurden. Es handelt sich dabei um private Rechnungen von Mitarbeitern. Deshalb dürfen die Originaldateien nicht öffentlich gezeigt oder als Anhang beigefügt werden.
+
+Aus Datenschutzgründen werden im Dokument weder die Originaldateien noch konkrete Firmennamen, Adressen oder Kontodaten abgedruckt. Stattdessen werden die Testrechnungen in Tabelle \ref{tab:testrechnungen} anonymisiert als TR01--TR10 beschrieben.
+
+\begin{table}[H]
+\centering
+\caption{Kurzcharakterisierung der 10 Testrechnungen}
+\label{tab:testrechnungen}
+\begin{tabularx}{\textwidth}{l M{2.2cm} M{1.8cm} X}
+\toprule
+\textbf{ID} & \textbf{Eingabe} & \textbf{Seiten} & \textbf{Wesentliche Merkmale (Bandbreite)} \\
+\midrule
+TR01 & PDF & 1 & Einfacher Standardfall: klare Struktur, gut lesbar \\
+TR02 & PDF & 1--2 & Abweichendes Layout, trotzdem Textschicht vorhanden \\
+TR03 & PDF & 2+ & Mehrseitig, Positionen über mehrere Seiten \\
+TR04 & PDF & 1 & Viele Positionen / dichte Tabelle \\
+TR05 & Scan & 1 & Bildbasierte Rechnung, OCR notwendig \\
+TR06 & Scan & 2+ & Mehrseitiger Scan, uneinheitliche Qualitaet \\
+TR07 & PDF & 1 & Ungewoehnliche Anordnung einzelner Felder (z.B. Kopf/Fuss) \\
+TR08 & PDF & 1 & Zusatztexte und Hinweise, die nicht als Felder interpretiert werden sollen \\
+TR09 & PDF & 1 & Rechen-/Summenpruefung kritisch (Rundungen/Teilbetraege) \\
+TR10 & PDF/Scan & 1--2 & Grenzfall: sehr wenig extrahierbarer Text, Fehlerfallbehandlung relevant \\
+\bottomrule
+\end{tabularx}
+\end{table}
+
+Hinweis: Die Spalten "Eingabe" und "Seiten" sind als Kurzübersicht gedacht. Falls diese Werte abweichen, können sie vor der Abgabe leicht angepasst werden, ohne die Aussagen in den Hauptkapiteln zu verändern.
+
+\section{Benutzertests (Frontend)}
+\label{app:usability_test}
+
+Im Rahmen der Entwicklung wurde ein kurzer, aufgabenbasierter Usability-Check durchgeführt. Ziel war nicht eine statistische Studie, sondern das frühe Finden von Stolperstellen in der Bedienung.
+
+\textbf{Teilnehmer:} Insgesamt \textbf{[ZAHL EINTRAGEN]} Personen (interne Kurztests).
+
+\textbf{Aufgaben:} (1) Zielformat wählen, (2) eine Datei hochladen, (3) Konvertierung starten, (4) Ergebnis herunterladen, (5) eine Datei entfernen, (6) Fehlerfall nachvollziehen (z.B. unlesbare Datei).
+
+\textbf{Beobachtungskriterien:} Versteht die Testperson den nächsten Schritt ohne Hilfe? Werden Fehlermeldungen richtig eingeordnet? Wird der Download gefunden?
+
+\textbf{Kurzfazit:} Der Ablauf wurde in der Regel ohne Erklärung verstanden. Verbesserungsbedarf zeigte sich vor allem bei Fehlersituationen: Hier hilft es, neben der reinen Fehlermeldung auch eine kurze Handlungsanweisung zu geben (z.B. "Bitte eine schärfere Datei hochladen" oder "Bei Scan: OCR wird verwendet").
+
+\section{Validator-Prüfungen}
+\label{app:validatoren}
+
+Die erzeugten XML-Dateien wurden im Rahmen der Abnahme mit folgenden externen Validatoren geprüft:
+\begin{compactitem}
+	\item ebInterface-Validierungsportal (AUSTRIAPRO): \url{https://labs.ebinterface.at/}
+	\item E-Rechnungs-Validator (ZUGFeRD/XRechnung): \url{https://erechnungs-validator.de/}
+\end{compactitem}
+
+Die Prüfung über externe Validatoren ergänzt die interne Schema-Validierung, weil sie zusätzliche Geschäftsregeln und Plausibilitäten abdeckt, die in realen Einreichprozessen relevant sind.
